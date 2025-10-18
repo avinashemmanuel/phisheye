@@ -1,0 +1,99 @@
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background-color: #f4f7f6;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    margin: 0;
+    color: #333;
+}
+
+.container {
+    background-color: #ffffff;
+    padding: 40px;
+    border-radius: 12px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+    text-align: center;
+    width: 100%;
+    max-width: 600px;
+    box-sizing: border-box;
+}
+
+h1 {
+    color: #2c3e50;
+    margin-bottom: 30px;
+    font-size: 2.5em;
+}
+
+.input-group {
+    display: flex;
+    margin-bottom: 30px;
+}
+
+#urlInput {
+    flex-grow: 1;
+    padding: 15px, 20px;
+    border: 2px solid #e0e0e0;
+    border-radius: 8px 0 0 8px;
+    font-size: 1.1em;
+    outline: none;
+    transition: border-color 0.3s ease; 
+}
+
+#urlInput:focus {
+    border-color: #3498db;
+}
+
+#scanButton {
+    padding: 15px 25px;
+    background-color: #3498db;
+    color: white;
+    border: none;
+    border-radius: 0 8px 8px 0;
+    font-size: 1.1em;
+    cursor: pointer;
+    transition: background-color 0.3s ease, transform 0.2s ease;
+}
+
+#scanButton:hover {
+    background-color: #2980b9;
+    transform: translateY(-0.5px);
+}
+
+.result-box {
+    background-color: #ecf0f1;
+    padding: 15px;
+    border-radius: 8px;
+    min-height: 50px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    font-size: 1.2em;
+    color: #555;
+    border: 1px solid #dcdcdc;
+    text-align: left;
+    word-wrap: break-word;
+}
+
+.result-box.safe {
+    background-color: #e6ffe6;
+    border-color: #27ae60;
+    color: #27ae60;
+}
+
+.result-box.suspicious {
+    background-color: #fffbe6;
+    border-color: #f39c12;
+    color: #f39c12;
+}
+
+.result-box.dangerous {
+    background-color: #ffe6e6;
+    border-color: #e74c3c;
+    color: #e74c3c;
+}
+
+.result-box p {
+    margin: 0;
+}

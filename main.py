@@ -21,7 +21,8 @@ app = FastAPI(
 # --- CORS Configuration ---
 origins = [
     "http://localhost",
-    "http://localhost:3000",
+    "http://localhost:8000", # Your backend
+    "http://127.0.0.1",
     "http://127.0.0.1:8000",
     # For browser extensions, you might need to allow specific extension IDs or use '*' for development
     # WARNING: Use specific origins in production!
@@ -139,13 +140,14 @@ async def scan_url(request: URLScanRequest):
         prediction = app.state.phishing_detector_model.predict([url])[0]
         prediction_proba = app.state.phishing_detector_model.predict_proba([url])[0]
 
-        status = "Safe"
+        status = "safe"
         confidence = prediction_proba[0] # Confidence for 'good'
+        
         if prediction == 1: # 'bad'
-            status = "Dangerous"
+            status = "dangerous"
             confidence = prediction_proba[1] # Confidence for 'bad'
         elif confidence < 0.8: # Example threshold for 'Suspicious'
-            status = "Suspicious"
+            status = "suspicious"
 
         return {
             "url": url,
