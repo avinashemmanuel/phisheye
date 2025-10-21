@@ -2,9 +2,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const urlInput = document.getElementById('urlInput');
     const scanButton = document.getElementById('scanButton');
     const resultBox = document.getElementById('result');
+    const loadingSpinner = document.getElementById('loadingSpinner');
 
     // Function to update the result box with status and styling
     function updateResult(status, confidence = null) {
+        loadingSpinner.classList.add('spinner-hidden');
         resultBox.className = 'result-box'; // Reset classes
         let message = '';
 
@@ -54,6 +56,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // Show a loading state
         resultBox.className = 'result-box'; // Reset classes
         resultBox.innerHTML = '<p>Scanning...</p>'; // This one is fine with single quotes as no interpolation
+        loadingSpinner.classList.remove('spinner-hidden');
 
         try {
             // Make a POST request to my FastAPI backend
@@ -78,6 +81,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         } catch (error) {
             console.error('Error scanning URL:', error);
+            loadingSpinner.classList.add('spinner-hidden');
             resultBox.className = 'result-box dangerous'; // Use dangerous styling for network errors
             // --- FIX 5: Use backticks for string interpolation ---
             resultBox.innerHTML = `<p>Error connecting to the scanner: ${error.message}. Make sure the backend is running.</p>`;
