@@ -6,14 +6,14 @@ document.addEventListener('DOMContentLoaded', () => {
     const scanHistorySection = document.getElementById('scanHistory');
     const historyList = document.getElementById('historyList');
     const clearHistoryButton = document.getElementById('clearHistoryButton');
+    const detailedResultsDiv = document.getElementById('detailedResults'); // NEW: Get detailed results div
+    const detailsList = document.getElementById('detailsList');           // NEW: Get UL for details
 
-    // Array to store scan history
     let scanHistory = [];
-    const MAX_HISTORY_ITEMS = 10; // Limit history to last 10 scans
+    const MAX_HISTORY_ITEMS = 10;
 
-    // History-Functions
+    // --- History Functions (No changes needed here, but keeping for context) ---
 
-    //Load history from localStorage
     function loadHistory() {
         const storedHistory = localStorage.getItem('urlScanHistory');
         if (storedHistory) {
@@ -22,33 +22,29 @@ document.addEventListener('DOMContentLoaded', () => {
         renderHistory();
     }
 
-    // Save history to localStorage
     function saveHistory() {
         localStorage.setItem('urlScanHistory', JSON.stringify(scanHistory));
         renderHistory();
     }
 
-    // Add a new item to history
     function addHistoryItem(url, status, confidence) {
         const timestamp = new Date().toLocaleString();
-        scanHistory.unshift({ url, status, confidence, timestamp }); // Add to the beginning
+        scanHistory.unshift({ url, status, confidence, timestamp });
 
-        // Keep only the latest MAX_HISTORY_ITEMS
         if (scanHistory.length > MAX_HISTORY_ITEMS) {
             scanHistory = scanHistory.slice(0, MAX_HISTORY_ITEMS);
         }
         saveHistory();
     }
 
-    // Render history to the DOM
     function renderHistory() {
-        historyList.innerHTML = ''; // Clear existing list
+        historyList.innerHTML = '';
 
         if (scanHistory.length === 0) {
-            scanHistorySection.classList.add('history-hidden'); // Hide section if no history
+            scanHistorySection.classList.add('history-hidden');
             return;
         } else {
-            scanHistorySection.classList.remove('history-hidden'); // Show section if history exists
+            scanHistorySection.classList.remove('history-hidden');
         }
 
         scanHistory.forEach(item => {
@@ -60,7 +56,7 @@ document.addEventListener('DOMContentLoaded', () => {
             listItem.appendChild(urlSpan);
 
             const statusSpan = document.createElement('span');
-            statusSpan.classList.add('history-status', item.status); // Add status class for styling
+            statusSpan.classList.add('history-status', item.status);
             statusSpan.textContent = item.status.toUpperCase();
             listItem.appendChild(statusSpan);
 
@@ -68,22 +64,78 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // Clear all history
     clearHistoryButton.addEventListener('click', () => {
-        if (confirm('Are you sure you want to clear the scan history?')) {
+        if (confirm('Are you sure you want to clear all scan history?')) {
             scanHistory = [];
             saveHistory();
         }
     });
 
-    // Function to update the result box with status and styling
-    // CORRECTED: messageOverride now has a default value of null
-    function updateResult(status, confidence = null, messageOverride = null) {
-        loadingSpinner.classList.add('spinner-hidden'); // Hide spinner when results are ready
-        resultBox.className = 'result-box'; // Reset classes
+    // --- NEW: Function to render detailed features ---
+    function renderDetailedFeatures(features) {
+        detailsList.innerHTML = ''; // Clear previous details
+        if (!features || Object.keys(features).length === 0) {
+            detailedResultsDiv.classList.add('detailed-results-hidden');
+            return;
+        }
+
+        detailedResultsDiv.classList.remove('detailed-results-hidden');
+
+        // Map feature keys to more readable names
+        const featureDisplayNames = {
+            'url_length': 'URL Length',
+            'hostname_length': 'Hostname Length',
+            'num_dots': 'Number of Dots',
+            'num_dashes': 'Number of Dashes',
+            'num_at': 'Has "@" Symbol',
+            'num_question': 'Has "?" Symbol',
+            'num_ampersand': 'Has "&" Symbol',
+            'num_equals': 'Has "=" Symbol',
+            'num_slash': 'Number of Slashes',
+            'has_www': 'Has "www"',
+            'has_https': 'Uses HTTPS',
+            'has_ip': 'Has IP Address',
+            'has_shortening': 'Uses Shortener',
+            'entropy': 'URL Entropy'
+        };
+
+        for (const key in features) {
+            if (features.hasOwnProperty(key)) {
+                const listItem = document.createElement('li');
+                const displayName = featureDisplayNames[key] || key; // Use display name or raw key
+                let value = features[key];
+
+                // Format boolean-like values
+                if (key === 'has_ip' || key === 'has_shortening' || key === 'has_https' || key === 'num_at') {
+                    value = value === 1 ? 'Yes' : 'No';
+                } else if (key === 'entropy') {
+                    value = value.toFixed(2); // Format entropy to 2 decimal places
+                }
+
+                listItem.innerHTML = `<strong>${displayName}:</strong> <span>${value}</span>`;
+                detailsList.appendChild(listItem);
+            }
+        }
+    }
+
+
+    // Function to update the result box with status and styling (MODIFIED)
+    function updateResult(status, confidence = null, messageOverride = null, details = null) { // NEW: Add details parameter
+        loadingSpinner.classList.add('spinner-hidden');
+        resultBox.className = 'result-box';
         let message = '';
 
-        if (messageOverride) { // Use override if provided
+        // Hide detailed results by default, show only if details are provided
+        if (details) {
+            detailedResultsDiv.classList.remove('detailed-results-hidden');
+            renderDetailedFeatures(details);
+        } else {
+            detailedResultsDiv.classList.add('detailed-results-hidden');
+            detailsList.innerHTML = ''; // Clear any old details
+        }
+
+
+        if (messageOverride) {
             message = messageOverride;
         } else if (status === 'safe') {
             resultBox.classList.add('safe');
@@ -94,21 +146,30 @@ document.addEventListener('DOMContentLoaded', () => {
         } else if (status === 'dangerous') {
             resultBox.classList.add('dangerous');
             message = 'This URL is DANGEROUS! Do NOT Visit.';
-        } else if (status === 'invalid') { // This is for backend errors or general issues
-            resultBox.classList.add('suspicious'); // Use suspicious for general errors
-            message = 'Error: Could not determine URL safety.';
-        } else if (status === 'validation-error') { // New status for client-side validation
-            resultBox.classList.add('suspicious'); // Use suspicious for validation errors
+        } else if (status === 'validation-error') {
+            resultBox.classList.add('suspicious');
             message = 'Please enter a valid URL (e.g., https://example.com).';
-        } else {
-            message = 'An unexpected error occurred.';
+        } else if (status === 'error') {
+            resultBox.classList.add('dangerous');
+            message = `Backend Error: ${messageOverride || 'An error occurred during scanning.'}`;
+        }
+        else {
+            message = 'An unexpected status was received from the scanner.';
         }
 
-        if (confidence !== null && status !== 'invalid' && status !== 'validation-error') {
+        if (confidence !== null && status !== 'invalid' && status !== 'validation-error' && status !== 'error') {
             message += ` (Confidence: ${(confidence * 100).toFixed(2)}%)`;
         }
 
-        resultBox.innerHTML = `<p>${message}</p>`;
+        // Update the main result message
+        // We need to ensure the <p> tag is always there for the main message
+        let mainMessageP = resultBox.querySelector('p');
+        if (!mainMessageP) {
+            mainMessageP = document.createElement('p');
+            resultBox.prepend(mainMessageP); // Add it at the beginning
+        }
+        mainMessageP.textContent = message;
+
 
         // Add to history if it's a successful scan from backend
         if (['safe', 'suspicious', 'dangerous'].includes(status)) {
@@ -116,29 +177,35 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // Event listener for the scan button
+    // Event listener for the scan button (MODIFIED)
     scanButton.addEventListener('click', async () => {
         const url = urlInput.value.trim();
 
-        // --- Enhanced Client-side URL Validation ---
         if (!url) {
             updateResult('validation-error', null, 'URL cannot be empty. Please enter a URL.');
             return;
         }
 
-        // More robust regex for URL validation
+        // Clear previous detailed results when a new scan starts
+        detailedResultsDiv.classList.add('detailed-results-hidden');
+        detailsList.innerHTML = '';
+
         const urlRegex = /^(https?:\/\/(?:www\.|(?!www))[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s]{2,}|www\.[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s]{2,}|https?:\/\/[a-zA-Z0-9]+\.[^\s]{2,}|[a-zA-Z0-9]+\.[^\s]{2,})$/i;
 
         if (!urlRegex.test(url)) {
-            updateResult('validation-error'); // This call is now fine because messageOverride defaults to null
+            updateResult('validation-error');
             return;
         }
 
-        // ... (rest of your script.js remains the same) ...
-
-        // --- Show loading state and spinner ---
         resultBox.className = 'result-box';
-        resultBox.innerHTML = '<p>Scanning...</p>';
+        // Ensure the main message paragraph is present and updated
+        let mainMessageP = resultBox.querySelector('p');
+        if (!mainMessageP) {
+            mainMessageP = document.createElement('p');
+            resultBox.prepend(mainMessageP);
+        }
+        mainMessageP.textContent = 'Scanning...';
+
         loadingSpinner.classList.remove('spinner-hidden');
 
         try {
@@ -157,13 +224,24 @@ document.addEventListener('DOMContentLoaded', () => {
             const data = await response.json();
             console.log(data);
 
-            updateResult(data.status, data.confidence);
+            if (data.status === 'error') {
+                updateResult('error', null, data.message || 'An internal error occurred in the scanner backend.');
+            } else {
+                // NEW: Pass the details to updateResult
+                updateResult(data.status, data.confidence, null, data.details);
+            }
 
         } catch (error) {
-            console.error('Network error scanning URL:', error);
+            console.error('Network Error scanning URL:', error);
             loadingSpinner.classList.add('spinner-hidden');
             resultBox.className = 'result-box dangerous';
-            resultBox.innerHTML = `<p>Error connecting to the scanner: ${error.message}. Make sure the backend is running.</p>`;
+            // Ensure the main message paragraph is present and updated
+            let mainMessageP = resultBox.querySelector('p');
+            if (!mainMessageP) {
+                mainMessageP = document.createElement('p');
+                resultBox.prepend(mainMessageP);
+            }
+            mainMessageP.textContent = `Network Error: ${error.message}. Make sure the backend is running and accessible.`;
         }
     });
 
@@ -173,6 +251,5 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // --- Initial Load ---
     loadHistory();
 });

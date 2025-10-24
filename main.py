@@ -1,162 +1,124 @@
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
-import os
+import joblib
 import re
-from urllib.parse import urlparse
+import numpy as np
+from urllib.parse import urlparse # Still useful for basic validation, but not for model features
 
-# Import only the load_phishing_model function from ml_model.py
-from ml_model import load_phishing_model
+app = FastAPI()
 
-# Pydantic model for request body
-class URLScanRequest(BaseModel):
-    url: str
-
-app = FastAPI(
-    title="PhishEye Detector API",
-    description="API for detecting phishing URLs.",
-    version="0.1.0"
-)
-
-# --- CORS Configuration ---
+# Configure CORS
 origins = [
     "http://localhost",
-    "http://localhost:8000", # Your backend
+    "http://localhost:8001", # Assuming your frontend runs on 8001
     "http://127.0.0.1",
-    "http://127.0.0.1:8000",
-    # For browser extensions, you might need to allow specific extension IDs or use '*' for development
-    # WARNING: Use specific origins in production!
-    "chrome-extension://*",
-    "moz-extension://*",
+    "http://127.0.0.1:8001",
 ]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], # For development, allow all origins. REFINE THIS FOR PRODUCTION!
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+# --- Load the trained Pipeline model ---
+# The model is a Pipeline that includes TF-IDF and a classifier.
+# It does NOT use a separate StandardScaler.
+try:
+    # Correct path and filename for your pipeline model
+    model_pipeline = joblib.load('model/phishing_detector_model.joblib')
+    print("Model pipeline loaded successfully.")
+except FileNotFoundError:
+    print("Error: Model pipeline file 'model/phishing_detector_model.joblib' not found.")
+    print("Please ensure 'ml_model.py' has been run to train and save the model.")
+    exit(1)
+except Exception as e:
+    print(f"Error loading model pipeline: {e}")
+    exit(1)
 
-# --- Feature Extraction Functions (duplicated for clarity and self-containment for prediction) ---
-# These functions must be IDENTICAL to those used during training!
-# They are not directly used by the pipeline in this setup, but are good for reference
-# if you were to add more numerical features to the pipeline.
-def get_domain(url):
-    try:
-        return urlparse(url).netloc
-    except:
-        return None
+class URLItem(BaseModel):
+    url: str
 
-def get_path(url):
-    try:
-        return urlparse(url).path
-    except:
-        return None
+# --- Feature Extraction Functions (REMOVE THESE - they are not used by your pipeline model) ---
+# The pipeline handles feature extraction (TF-IDF) internally from the raw URL string.
+# Keeping these here would be misleading and unused.
+# If you wanted to add *additional* numerical features to your pipeline, you'd need
+# to use a ColumnTransformer or similar sklearn utility in your ml_model.py.
+# For now, we're sticking to the TF-IDF on raw URL.
 
-def get_query(url):
-    try:
-        return urlparse(url).query
-    except:
-        return None
-
-def having_ip_address(url):
-    match = re.search(
-        r'(([01]?\d\d?|2[0-4]\d|25[0-5])\.([01]?\d\d?|2[0-4]\d|25[0-5])\.([01]?\d\d?|2[0-4]\d|25[0-5])\.'
-        r'([01]?\d\d?|2[0-4]\d|25[0-5])\/)|'  # IPv4
-        r'((0x[0-9a-fA-F]{1,2})\.(0x[0-9a-fA-F]{1,2})\.(0x[0-9a-fA-F]{1,2})\.(0x[0-9a-fA-F]{1,2})\/)|'  # IPv4 in hexadecimal
-        r'(?:[a-fA-F0-9]{1,4}:){7}[a-fA-F0-9]{1,4}|'
-        r'([0-9a-fA-F]{1,4}:){1,7}:[0-9a-fA-F0-9]{1,4}|'
-        r'([0-9a-fA-F]{1,4}:){1,6}:([0-9a-fA-F0-9]{1,4}){1,2}|'
-        r'([0-9a-fA-F]{1,4}:){1,5}(:([0-9a-fA-F0-9]{1,4}){1,3}){1,2}|'
-        r'([0-9a-fA-F]{1,4}:){1,4}(:([0-9a-fA-F0-9]{1,4}){1,4}){1,2}|'
-        r'([0-9a-fA-F]{1,4}:){1,3}(:([0-9a-fA-F0-9]{1,4}){1,5}){1,2}|'
-        r'([0-9a-fA-F]{1,4}:){1,2}(:([0-9a-fA-F0-9]{1,4}){1,6}){1,2}|'
-        r':((:([0-9a-fA-F0-9]{1,4}){1,7})|:)|'
-        r'fe80:(:[0-9a-fA-F]{0,4}){0,4}%[0-9a-zA-Z]{1,}|'
-        r'::(ffff(:0{1,4}){0,1}:){0,1}((25[0-5]|2[0-4][0-9]|1?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|1?[0-9][0-9]?)|'
-        r'([0-9a-fA-F]{1,4}:){1,4}:((25[0-5]|2[0-4][0-9]|1?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|1?[0-9][0-9]?))'
-        , url)
-    return 1 if match else 0
-
-def url_length(url):
-    return len(url)
-
-def having_at_symbol(url):
-    return 1 if "@" in url else 0
-
-def having_double_slash(url):
-    return 1 if "//" in url else 0
-
-def count_dots(url):
-    return url.count('.')
-
-def count_hyphens(url):
-    return url.count('-')
-
-def count_subdomains(url):
-    domain = get_domain(url)
-    if domain:
-        return len(domain.split('.')) - 1
-    return 0
-# --- END Feature Extraction Functions ---
-
-# --- FastAPI Event Handlers ---
-@app.on_event("startup")
-async def startup_event():
-    # Load the model and assign it to app.state
-    app.state.phishing_detector_model = load_phishing_model()
-    print("FastAPI app startup: ML model loaded and assigned to app.state.")
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    print("FastAPI app shutdown.")
-    # Any cleanup can go here
-
-# --- API Endpoints ---
-@app.get("/")
-async def read_root():
-    return {"message": "Welcome to PhishEye Detector API!"}
-
-@app.get("/health")
-async def health_check():
-    if not hasattr(app.state, 'phishing_detector_model') or app.state.phishing_detector_model is None:
-        return {"status": "error", "message": "ML model not loaded."}
-    return {"status": "ok", "message": "API is healthy and ML model is loaded."}
+# --- Main Feature Extraction Function (REMOVE THIS) ---
+# This is no longer needed as the pipeline takes the raw URL.
+# def extract_features(url):
+#     ...
 
 @app.post("/scan_url")
-async def scan_url(request: URLScanRequest):
-    url = request.url
+async def scan_url(item: URLItem):
+    url = item.url.strip()
 
     if not url:
         raise HTTPException(status_code=400, detail="URL cannot be empty.")
-    
-    if not hasattr(app.state, 'phishing_detector_model') or app.state.phishing_detector_model is None:
-        raise HTTPException(status_code=500, detail="ML model is not loaded yet.")
+
+    # Basic URL validation (can be more robust)
+    # This is for frontend feedback, not for the model itself
+    if not re.match(r'https?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+', url):
+        return {"status": "error", "message": "Invalid URL format. Please include http:// or https://"}
 
     try:
-        # The pipeline expects a list of URLs
-        prediction = app.state.phishing_detector_model.predict([url])[0]
-        prediction_proba = app.state.phishing_detector_model.predict_proba([url])[0]
+        # The model_pipeline expects the raw URL string directly
+        # It handles TF-IDF transformation internally.
+        
+        # Make prediction
+        # prediction will be an array, take the first element
+        prediction = model_pipeline.predict([url])[0]
+        # prediction_proba will be an array of probabilities for each class
+        prediction_proba = model_pipeline.predict_proba([url])[0]
 
         status = "safe"
-        confidence = prediction_proba[0] # Confidence for 'good'
-        
-        if prediction == 1: # 'bad'
+        confidence = prediction_proba[0] # Confidence for 'safe' (class 0)
+
+        if prediction == 1: # Assuming 1 is malicious/phishing
             status = "dangerous"
-            confidence = prediction_proba[1] # Confidence for 'bad'
-        elif confidence < 0.8: # Example threshold for 'Suspicious'
-            status = "suspicious"
+            confidence = prediction_proba[1] # Confidence for 'dangerous' (class 1)
+        
+        # For simplicity, let's define suspicious as a range where confidence isn't very high for either
+        # You might adjust these thresholds based on your model's performance
+        if 0.4 < confidence < 0.6: # If confidence for either class is in this range
+             status = "suspicious"
+
+        # --- Detailed Features (Re-introduce the ones from ml_model.py if desired) ---
+        # Since your ml_model.py uses TF-IDF, the "details" we can provide
+        # are the raw features you defined in ml_model.py, but they are NOT
+        # what the model directly used for classification.
+        # If you want to show these, you need to call them here.
+        # Let's include a few simple ones for demonstration.
+        detailed_features = {
+            'url_length': len(url),
+            'has_ip_address': 1 if re.search(r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}', urlparse(url).netloc) else 0,
+            'has_at_symbol': 1 if "@" in url else 0,
+            'num_dots': url.count('.'),
+            'num_hyphens': url.count('-'),
+            'uses_https': 1 if url.lower().startswith('https') else 0,
+            'domain': urlparse(url).netloc,
+            'path': urlparse(url).path,
+            'query': urlparse(url).query,
+        }
+
 
         return {
-            "url": url,
             "status": status,
-            "confidence": round(confidence, 4),
-            "prediction_raw": int(prediction) # 0 for good, 1 for bad
+            "confidence": float(confidence),
+            "url": url,
+            "details": detailed_features # Return these for the frontend
         }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error during URL scan: {str(e)}")
 
-# No if __name__ == "__main__": block here.
-# Run with: uvicorn main:app --reload --host 0.0.0.0 --port 8000
+    except Exception as e:
+        print(f"Error during URL scanning: {e}")
+        raise HTTPException(status_code=500, detail=f"Internal server error during scan: {e}")
+
+# Root endpoint for basic check
+@app.get("/")
+async def read_root():
+    return {"message": "URL Scanner Backend is running!"}

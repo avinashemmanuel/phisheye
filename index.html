@@ -9,7 +9,7 @@
 <body>
     <div class="container">
 
-        <h1>PhishEye Scanner</h1>
+        <h1>PhishEye</h1>
 
         <div class="input-group">
             <input type="text" id="urlInput" placeholder="Enter URL to scan..." required>
@@ -23,6 +23,14 @@
 
         <div id="result" class="result-box">
             <p>Enter a URL and click to 'Scan' to check its safety!</p>
+
+            <div id="detailedResults" class="detailed-results-hidden">
+                <h3>Scan Details:</h3>
+                <ul id="detailsList">
+                    <!-- Details will be inserted here by JavaScript-->
+                </ul>
+            </div>
+            
         </div>
         
         <div id="scanHistory" class="history-section">
