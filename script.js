@@ -71,51 +71,34 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // --- NEW: Function to render detailed features ---
-    function renderDetailedFeatures(features) {
+    function renderDetailedFeatures(details) {
+        const detailsList = document.getElementById('detailsList');
+        const detailedResultsContainer = document.getElementById('detailedResults'); // Get the container div
         detailsList.innerHTML = ''; // Clear previous details
-        if (!features || Object.keys(features).length === 0) {
-            detailedResultsDiv.classList.add('detailed-results-hidden');
-            return;
-        }
 
-        detailedResultsDiv.classList.remove('detailed-results-hidden');
+        if (details && Object.keys(details).length > 0) {
+            detailedResultsContainer.classList.remove('detailed-results-hidden'); // Show the container
+            for (const key in details) {
+                if (details.hasOwnProperty(key)) {
+                    const dt = document.createElement('dt');
+                    dt.textContent = formatFeatureName(key); // Format key for display
+                    detailsList.appendChild(dt);
 
-        // Map feature keys to more readable names
-        const featureDisplayNames = {
-            'url_length': 'URL Length',
-            'hostname_length': 'Hostname Length',
-            'num_dots': 'Number of Dots',
-            'num_dashes': 'Number of Dashes',
-            'num_at': 'Has "@" Symbol',
-            'num_question': 'Has "?" Symbol',
-            'num_ampersand': 'Has "&" Symbol',
-            'num_equals': 'Has "=" Symbol',
-            'num_slash': 'Number of Slashes',
-            'has_www': 'Has "www"',
-            'has_https': 'Uses HTTPS',
-            'has_ip': 'Has IP Address',
-            'has_shortening': 'Uses Shortener',
-            'entropy': 'URL Entropy'
-        };
-
-        for (const key in features) {
-            if (features.hasOwnProperty(key)) {
-                const listItem = document.createElement('li');
-                const displayName = featureDisplayNames[key] || key; // Use display name or raw key
-                let value = features[key];
-
-                // Format boolean-like values
-                if (key === 'has_ip' || key === 'has_shortening' || key === 'has_https' || key === 'num_at') {
-                    value = value === 1 ? 'Yes' : 'No';
-                } else if (key === 'entropy') {
-                    value = value.toFixed(2); // Format entropy to 2 decimal places
+                    const dd = document.createElement('dd');
+                    dd.textContent = details[key];
+                    detailsList.appendChild(dd);
                 }
-
-                listItem.innerHTML = `<strong>${displayName}:</strong> <span>${value}</span>`;
-                detailsList.appendChild(listItem);
             }
+        } else {
+            detailedResultsContainer.classList.add('detailed-results-hidden'); // Hide the container
         }
+    }
+
+    // Helper function to format feature names (e.g., "url_length" -> "URL Length")
+    function formatFeatureName(name) {
+        return name
+            .replace(/_/g, ' ') // Replace underscores with spaces
+            .replace(/\b\w/g, char => char.toUpperCase()); // Capitalize first letter of each word
     }
 
 

@@ -209,43 +209,81 @@ h1 {
 }
 
 /* Detailed Results Styles */
-.detailed-results {
-    margin-top: 20px;
-    padding-top: 15px;
-    border-top: 1px solid #eee;
+.detailed-results-hidden {
+    display: none;
 }
 
-.detailed-results h3 {
-    font-size: 1.1em;
-    color: #444;
-    margin-top: 10px;
+#detailedResults {
+    margin-top: 20px;
+    padding-top: 15px;
+    border-top: 15px solid #eee;
+}
+
+#detailedResults h3 {
+    font-size: 1.2em;
+    color: #333;
+    margin-bottom: 15px;
+    text-align: center;
 }
 
 #detailsList {
-    list-style: none;
-    padding: 0;
-    margin: 0;
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-    gap: 10px;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 15px 20px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
 }
 
-#detailsList li {
-    background-color: #f0f0f0;
-    padding: 8px 12px;
-    border-radius: 5px;
-    font-size: 0.9em;
-    color: #666;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
+#detailsList dt {
+    font-weight: bold;
+    color: #555;
+    padding-bottom: 3px;
+    border-bottom: 1px dotted #ccc;
 }
 
-#detailsList li strong {
+#detailsList dd {
+    margin-left: 0;
+    padding-top: 3px;
     color: #333;
-    margin-right: 5px;
+    font-size: 0.95em;
+    word-break: break-word;
 }
 
-.detailed-results-hidden {
-    display: none;
+#detailsList dt:hover {
+    color: #007bff;
+}
+
+@media (max-width: 600px) {
+    #detailsList {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* About section styling */
+.about-section {
+    margin-top: 40px;
+    background-color: #eaf4f7;
+    border-radius: 8px;
+    padding: 25px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+    text-align: left;
+    line-height: 1.6;
+    color: #444;
+}
+
+.about-section h2 {
+    text-align: center;
+    color: #2c3e50;
+    margin-bottom: 20px;
+    font-size: 1.6em;
+}
+
+.about-section p {
+    margin-bottom: 15px;
+    text-align: left;
+}
+
+.about-section p:last-child {
+    margin-bottom: 0;
 }
