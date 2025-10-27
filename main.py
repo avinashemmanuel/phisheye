@@ -111,7 +111,7 @@ async def scan_url(item: URLItem):
             "status": status,
             "confidence": float(confidence),
             "url": url,
-            "details": detailed_features # Return these for the frontend
+            "detailed_features": detailed_features # Return these for the frontend
         }
 
     except Exception as e:

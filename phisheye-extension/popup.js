@@ -31,9 +31,11 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // Helper function to render detailed features (copied from webapp)
     function renderDetailedFeatures(details) {
+        console.log('renderDetailedFeatures called with details:', details); // ADD THIS LOG
         detailsList.innerHTML = ''; // Clear previous details
         if (details && Object.keys(details).length > 0) {
-            detailedResultsContainer.classList.remove('detailed-results-hidden');
+            console.log('Details are present, removing hidden class from detailedResultsContainer.'); // ADD THIS LOG
+            detailedResultsContainer.classList.remove('hidden');
             for (const key in details) {
                 if (details.hasOwnProperty(key)) {
                     const dt = document.createElement('dt');
@@ -42,19 +44,21 @@ document.addEventListener('DOMContentLoaded', async () => {
 
                     const dd = document.createElement('dd');
                     dd.textContent = details[key];
-                    detailsList.appendChild[dd];
+                    detailsList.appendChild(dd);
                 }
             }
         } else {
-            detailedResultsContainer.classList.add('detailed-results-hidden');
+            console.log('No details present, adding hidden class to detailedResultsContainer.'); // ADD THIS LOG
+            detailedResultsContainer.classList.add('hidden');
         }
     }
 
     // Function to update the result box (adapted from webapp)
     function updateResultDisplay(status, confidence = null, messageOverride = null, details = null) {
+        console.log('updateResultDisplay called. Status:', status, 'Confidence:', confidence, 'Details:', details);
         loadingSpinner.classList.add('spinner-hidden'); // Hide spinner
         resultDiv.classList.remove('hidden'); // Show result box
-        resultDiv.className = 'result-box'; // Reset classes
+        resultDiv.className = 'result-box'; // Reset classes (removes safe/suspicious/dangerous)
 
         let message = '';
 
@@ -70,10 +74,10 @@ document.addEventListener('DOMContentLoaded', async () => {
             resultDiv.classList.add('dangerous');
             message = 'This URL is DANGEROUS! Do NOT Visit.';
         } else if (status === 'validation-error') {
-            resultDiv.classList.add('suspicious');
+            resultDiv.classList.add('suspicious'); // Using suspicious style for validation errors
             message = 'Please enter a valid URL (e.g., https://example.com).';
         } else if (status === 'error') {
-            resultDiv.classList.add('dangerous');
+            resultDiv.classList.add('dangerous'); // Using dangerous style for backend errors
             message = `Backend Error: ${messageOverride || 'An error occurred during scanning.'}`;
         } else {
             message = 'An unexpected status was received from the scanner.';
@@ -86,10 +90,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         resultText.textContent = message;
 
         // Render detailed features if available
-        if (details) {
+        if (details && Object.keys(details).length > 0) {
             renderDetailedFeatures(details);
         } else {
-            detailedResultsContainer.classList.add('detailed-results-hidden');
+            detailedResultsContainer.classList.add('hidden');
             detailsList.innerHTML = '';
         }
     }
@@ -103,13 +107,13 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         // Reset UI and show loading
         resultDiv.classList.add('hidden');
-        detailedResultsContainer.classList.add('detailed-results-hidden');
+        detailedResultsContainer.classList.add('hidden'); // FIX: Use 'hidden'
         loadingSpinner.classList.remove('spinner-hidden');
         resultText.textContent = '';
         detailsList.innerHTML = '';
         
         try {
-            const response = await fetch('http://127.0.0.1:8000/scan_url', {    // IMPORTANT: Ensure your backend is running
+            const response = await fetch('http://127.0.0.1:8000/scan_url', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -117,16 +121,17 @@ document.addEventListener('DOMContentLoaded', async () => {
                 body: JSON.stringify({ url: activeTabUrl }),
             });
             const data = await response.json();
+            console.log('Backend response data:', data); // ADD THIS LOG
             
             if (!response.ok || data.status === 'error') {
-                throw new Error(data.message || 'HTTP Error! status: ${response.status}');
+                throw new Error(data.message || `HTTP Error! status: ${response.status}`);
             }
 
             updateResultDisplay(data.status, data.confidence, null, data.detailed_features);
 
         } catch (error) {
             console.error('PhishEye Extension Error:', error);
-            updateResultDisplay('error', null, 'Failed to connect to the scanner backend (${error.message})');
+            updateResultDisplay('error', null, `Failed to connect to the scanner backend (${error.message})`);
         } finally {
             loadingSpinner.classList.add('spinner-hidden'); // Ensure spinner is hidden
         }

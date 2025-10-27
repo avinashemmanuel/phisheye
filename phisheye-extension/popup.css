@@ -111,6 +111,7 @@ h2 {
     display: none !important;
 }
 
+/* This class is no longer actively used by JS, but can remain if you wish */
 .detailed-results-hidden {
     display: none;
 }

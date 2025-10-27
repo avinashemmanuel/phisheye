@@ -210,8 +210,8 @@ document.addEventListener('DOMContentLoaded', () => {
             if (data.status === 'error') {
                 updateResult('error', null, data.message || 'An internal error occurred in the scanner backend.');
             } else {
-                // NEW: Pass the details to updateResult
-                updateResult(data.status, data.confidence, null, data.details);
+                // FIX: Change data.details to data.detailed_features
+                updateResult(data.status, data.confidence, null, data.detailed_features);
             }
 
         } catch (error) {
