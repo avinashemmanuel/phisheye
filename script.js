@@ -72,12 +72,10 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     function renderDetailedFeatures(details) {
-        const detailsList = document.getElementById('detailsList');
-        const detailedResultsContainer = document.getElementById('detailedResults'); // Get the container div
         detailsList.innerHTML = ''; // Clear previous details
 
         if (details && Object.keys(details).length > 0) {
-            detailedResultsContainer.classList.remove('detailed-results-hidden'); // Show the container
+            detailedResultsDiv.classList.remove('detailed-results-hidden'); // Show the container
             for (const key in details) {
                 if (details.hasOwnProperty(key)) {
                     const dt = document.createElement('dt');
@@ -90,7 +88,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }
         } else {
-            detailedResultsContainer.classList.add('detailed-results-hidden'); // Hide the container
+            detailedResultsDiv.classList.add('detailed-results-hidden'); // Hide the container
         }
     }
 
@@ -103,13 +101,21 @@ document.addEventListener('DOMContentLoaded', () => {
 
 
     // Function to update the result box with status and styling (MODIFIED)
-    function updateResult(status, confidence = null, messageOverride = null, details = null) { // NEW: Add details parameter
+    function updateResult(status, confidence = null, messageOverride = null, details = null) {
         loadingSpinner.classList.add('spinner-hidden');
-        resultBox.className = 'result-box';
+        resultBox.className = 'result-box'; // Reset classes
+
         let message = '';
 
-        // Hide detailed results by default, show only if details are provided
-        if (details) {
+        // Always ensure the main message paragraph exists
+        let mainMessageP = resultBox.querySelector('p');
+        if (!mainMessageP) {
+            mainMessageP = document.createElement('p');
+            resultBox.prepend(mainMessageP);
+        }
+
+        // Handle detailed results visibility and rendering
+        if (details && Object.keys(details).length > 0) {
             detailedResultsDiv.classList.remove('detailed-results-hidden');
             renderDetailedFeatures(details);
         } else {
@@ -130,28 +136,21 @@ document.addEventListener('DOMContentLoaded', () => {
             resultBox.classList.add('dangerous');
             message = 'This URL is DANGEROUS! Do NOT Visit.';
         } else if (status === 'validation-error') {
-            resultBox.classList.add('suspicious');
+            resultBox.classList.add('suspicious'); // Use suspicious for client-side validation errors
             message = 'Please enter a valid URL (e.g., https://example.com).';
         } else if (status === 'error') {
-            resultBox.classList.add('dangerous');
+            resultBox.classList.add('dangerous'); // Use dangerous for backend errors
             message = `Backend Error: ${messageOverride || 'An error occurred during scanning.'}`;
         }
         else {
             message = 'An unexpected status was received from the scanner.';
         }
 
-        if (confidence !== null && status !== 'invalid' && status !== 'validation-error' && status !== 'error') {
+        if (confidence !== null && status !== 'validation-error' && status !== 'error') {
             message += ` (Confidence: ${(confidence * 100).toFixed(2)}%)`;
         }
 
-        // Update the main result message
-        // We need to ensure the <p> tag is always there for the main message
-        let mainMessageP = resultBox.querySelector('p');
-        if (!mainMessageP) {
-            mainMessageP = document.createElement('p');
-            resultBox.prepend(mainMessageP); // Add it at the beginning
-        }
-        mainMessageP.textContent = message;
+        mainMessageP.textContent = message; // Update the main message
 
 
         // Add to history if it's a successful scan from backend
@@ -173,6 +172,9 @@ document.addEventListener('DOMContentLoaded', () => {
         detailedResultsDiv.classList.add('detailed-results-hidden');
         detailsList.innerHTML = '';
 
+        // A more robust URL regex for client-side validation
+        // This regex is quite strict, you might want to simplify it if it's too restrictive.
+        // For example, just checking for http/https prefix might be enough for a quick client-side check.
         const urlRegex = /^(https?:\/\/(?:www\.|(?!www))[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s]{2,}|www\.[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s]{2,}|https?:\/\/[a-zA-Z0-9]+\.[^\s]{2,}|[a-zA-Z0-9]+\.[^\s]{2,})$/i;
 
         if (!urlRegex.test(url)) {
@@ -180,7 +182,7 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        resultBox.className = 'result-box';
+        resultBox.className = 'result-box'; // Reset classes
         // Ensure the main message paragraph is present and updated
         let mainMessageP = resultBox.querySelector('p');
         if (!mainMessageP) {
@@ -192,7 +194,8 @@ document.addEventListener('DOMContentLoaded', () => {
         loadingSpinner.classList.remove('spinner-hidden');
 
         try {
-            const response = await fetch('http://127.0.0.1:8000/scan_url', {
+            // Ensure this matches your FastAPI backend's address and port
+            const response = await fetch('http://127.0.0.1:8000/scan_url', { // <-- Check this port!
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -201,16 +204,21 @@ document.addEventListener('DOMContentLoaded', () => {
             });
 
             if (!response.ok) {
-                throw new Error(`HTTP Error! status: ${response.status}`);
+                // If the backend returns an error status (e.g., 400, 500),
+                // we should still try to parse the JSON for a detailed message.
+                const errorData = await response.json();
+                throw new Error(errorData.detail || `HTTP Error! status: ${response.status}`);
             }
 
             const data = await response.json();
             console.log(data);
 
             if (data.status === 'error') {
+                // This handles the specific 'error' status returned by your FastAPI's
+                // client-side URL validation (e.g., if the regex in main.py fails)
                 updateResult('error', null, data.message || 'An internal error occurred in the scanner backend.');
             } else {
-                // FIX: Change data.details to data.detailed_features
+                // Corrected: Use data.detailed_features as returned by main.py
                 updateResult(data.status, data.confidence, null, data.detailed_features);
             }
 
@@ -224,7 +232,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 mainMessageP = document.createElement('p');
                 resultBox.prepend(mainMessageP);
             }
-            mainMessageP.textContent = `Network Error: ${error.message}. Make sure the backend is running and accessible.`;
+            mainMessageP.textContent = `Scan Error: ${error.message}. Make sure the backend is running and accessible.`;
         }
     });
 
