@@ -12,9 +12,15 @@ from urllib.parse import urlparse, parse_qs
 import pandas as pd
 from scipy.sparse import hstack
 import csv
-from datetime import datetime
-from database import SessionLocal, engine, Base, Scan, Feedback, get_db
+from datetime import datetime, timedelta
+from database import SessionLocal, engine, Base, Scan, Feedback, get_db, User
 from sqlalchemy.orm import Session
+from auth import (
+    hash_password,
+    verify_password,
+    create_api_key,
+    get_current_user
+)
 
 # --- Tell SQLAlchemy to create the tables ---
 # This will create the phisheye.db file and the tables
@@ -28,14 +34,14 @@ origins = [
     "http://localhost",
     "http://localhost:8001",
     "http://127.0.0.1",
-    "http://127.00.1:8001",
+    "http://127.0.0.1:8001",
 ]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
-    allow_credentials=True,
-    allow_methods=["*"],
+    allow_origins=["*"],
+    allow_credentials=False,
+    allow_methods=["POST", "OPTIONS"],
     allow_headers=["*"],
 )
 
@@ -89,6 +95,19 @@ class URLItem(BaseModel):
 class FeedbackItem(BaseModel):
     scan_id: int
     report_type: str # 'false_positive' or 'false_negative'
+
+# NEW: Pydantic model for user registration and login
+class UserCreate(BaseModel):
+    email: str
+    password: str
+
+class UserLogin(BaseModel):
+    email: str
+    password: str
+
+class UserResponse(BaseModel):
+    email: str
+    api_key: str
 
 # --- KNOWN LEGITIMATE DOMAINS LIST (Copied from ml_model.py) ---
 KNOWN_LEGITIMATE_DOMAINS_LIST = [
@@ -253,7 +272,7 @@ def extract_highly_discriminative_features(url):
     """
     features = []
     parsed_url = urlparse(url)
-    ext = tldextract.extract(url, update=False) # Extracts subdomain, domain, suffix
+    ext = tldextract.extract(url) # Extracts subdomain, domain, suffix
 
     # 1. URL Length
     features.append(len(url))
@@ -345,68 +364,94 @@ def extract_highly_discriminative_features(url):
 
 
 @app.post("/scan_url")
-async def scan_url(item: URLItem, db: Session = Depends(get_db)): # <-- 1. ADDED database session
+async def scan_url(
+    item: URLItem, 
+    db: Session = Depends(get_db),
+    current_user: User | None = Depends(get_current_user) # <-- 1. ADD THIS
+):
     url = item.url.strip()
 
     if not url:
         raise HTTPException(status_code=400, detail="URL cannot be empty.")
 
-    # Basic URL validation (can be more robust)
     if not re.match(r'https?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+', url):
         return {"status": "error", "message": "Invalid URL format. Please include http:// or https://"}
 
+    # We need to get the user ID, or None if it's a guest
+    user_id = current_user.id if current_user else None
+
     try:
-        # --- 2. Initialize variables to store results ---
+        # --- CACHING LOGIC ---
+        cache_duration = timedelta(hours=6)
+        cache_expiry_time = datetime.utcnow() - cache_duration
+
+        cached_scan = db.query(Scan).filter(
+            Scan.url == url,
+            Scan.timestamp >= cache_expiry_time
+        ).order_by(Scan.timestamp.desc()).first()
+
+        if cached_scan:
+            print(f"CACHE HIT: Returning saved result for {url}")
+            
+            # --- 2. START TIERED RETURN LOGIC ---
+            if current_user is None:
+                # GUEST USER: Basic info only
+                return {
+                    "scan_id": cached_scan.id,
+                    "status": cached_scan.status
+                }
+            else:
+                # REGISTERED USER: Full info
+                cached_features = {
+                    'reason': 'Cached Result',
+                    'domain': tldextract.extract(url).top_domain_under_public_suffix,
+                    'was_whitelisted': cached_scan.was_whitelisted
+                }
+                return {
+                    "scan_id": cached_scan.id,
+                    "status": cached_scan.status,
+                    "confidence": float(cached_scan.confidence),
+                    "url": cached_scan.url,
+                    "detailed_features": cached_features
+                }
+        
+        print(f"CACHE MISS: Performing new scan for {url}")
+        
+        # --- (Rest of your scan logic is the same) ---
         scan_status = ""
         scan_confidence = 0.0
         scan_whitelisted = False
-        scan_features = {} # To store the detailed features
+        scan_features = {} 
 
-        # --- RULE-BASED WHITELIST OVERRIDE ---
-        ext = tldextract.extract(url, update=False)
+        ext = tldextract.extract(url)
         if ext.top_domain_under_public_suffix and ext.top_domain_under_public_suffix.lower() in MASTER_WHITELIST_SET:
-            
-            # --- 3. SET variables instead of returning ---
             scan_status = "safe"
             scan_confidence = 0.999
             scan_whitelisted = True
             scan_features = {
                 'reason': 'Whitelisted Domain',
                 'domain': ext.top_domain_under_public_suffix,
-                'url_length': len(url),
-                'uses_https': 1 if url.lower().startswith('https') else 0,
             }
         
         else:
-            # --- 4. This is the ML model path ---
             scan_whitelisted = False
-            
-            # Extract TF-IDF features
-            url_tfidf = vectorizer.transform([url]) # Use the loaded vectorizer
-
-            # Extract additional numerical features
+            url_tfidf = vectorizer.transform([url])
             url_additional = pd.DataFrame([extract_highly_discriminative_features(url)])
-
-            # Combine features
-            from scipy.sparse import hstack # Import hstack here if not already at top
             url_combined = hstack([url_tfidf, url_additional])
             
-            # Make prediction
             prediction = model_pipeline.predict(url_combined)[0]
             prediction_proba = model_pipeline.predict_proba(url_combined)[0]
 
-            # --- 5. SET variables for ML result ---
-            if prediction == 1: # Assuming 1 is malicious/phishing
+            if prediction == 1:
                 scan_status = "dangerous"
-                scan_confidence = prediction_proba[1] # Confidence for 'dangerous' (class 1)
+                scan_confidence = prediction_proba[1]
             else:
                 scan_status = "safe"
-                scan_confidence = prediction_proba[0] # Confidence for 'safe' (class 0)
+                scan_confidence = prediction_proba[0]
             
             if 0.4 < scan_confidence < 0.6: 
                  scan_status = "suspicious"
 
-            # --- Detailed Features ---
             scan_features = {
                 'url_length': len(url),
                 'has_ip_address': 1 if re.search(r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}', urlparse(url).netloc) else 0,
@@ -424,204 +469,79 @@ async def scan_url(item: URLItem, db: Session = Depends(get_db)): # <-- 1. ADDED
                 'is_known_legit_domain_feature': extract_highly_discriminative_features(url)[19]
             }
 
-        # --- 6. DATABASE LOGGING (FEATURE 1) ---
-        # This part runs AFTER the if/else block, so it logs ALL scans
+        # --- DATABASE LOGGING ---
         new_scan = Scan(
             url=url,
             status=scan_status,
             confidence=float(scan_confidence),
             was_whitelisted=scan_whitelisted,
-            timestamp=datetime.utcnow()
+            timestamp=datetime.utcnow(),
+            user_id=user_id  # <-- 3. ADD THE USER ID
         )
         db.add(new_scan)
         db.commit()
-        db.refresh(new_scan) # Get the new_scan.id back
-        # --- End of Logging ---
+        db.refresh(new_scan)
 
-        # --- 7. FINAL RETURN ---
-        # Now we return the data, including the new scan_id
-        return {
-            "scan_id": new_scan.id, # <-- ADDED
-            "status": scan_status,
-            "confidence": float(scan_confidence),
-            "url": url,
-            "detailed_features": scan_features
-        }
+        # --- 4. FINAL TIERED RETURN ---
+        if current_user is None:
+            # GUEST USER: Basic info only
+            return {
+                "scan_id": new_scan.id,
+                "status": scan_status
+            }
+        else:
+            # REGISTERED USER: Full info
+            return {
+                "scan_id": new_scan.id,
+                "status": scan_status,
+                "confidence": float(scan_confidence),
+                "url": url,
+                "detailed_features": scan_features
+            }
 
     except Exception as e:
         print(f"Error during URL scanning: {e}")
-        db.rollback() # <-- 8. ADDED rollback on error
+        db.rollback()
         raise HTTPException(status_code=500, detail=f"Internal server error during scan: {e}")
     
 # --- New ENDPOINT for feedback (featur 1) ---
 @app.post("/report_feedback")
-async def report_feedback(item: FeedbackItem, db: Session = Depends(get_db)):
-    """Endpoint for users to report an incorrect prediction"""
-    # 1. Check if the original scan exists
-    scan = db.query(Scan).filter(Scan.id == item.scan_id).first()
-    if not scan:
-        raise HTTPException(status_code=404, detail="Original scan not found.")
-    
-    # 2. Check if feedback for this scan already exists
-    existing_feedback = db.query(Feedback).filter(Feedback.scan_id == item.scan_id).first()
-    if existing_feedback:
-        return {"message": "Feedback for this scan has already been recorded."}
-    
-    # 3. Save the new feedback
-    new_feedback = Feedback(
-        scan_id=item.scan_id,
-        report_type=item.report_type,
-        timestamp=datetime.utcnow()
-    )
-    db.add(new_feedback)
-    db.commit()
-
-    print(f"Feedback received for the scan {item.scan_id}: {item.report_type}")
-
-    # main.py
-from fastapi import FastAPI, HTTPException, Depends  # <-- Add Depends
-from pydantic import BaseModel
-from fastapi.middleware.cors import CORSMiddleware
-import joblib
-# ... (all your other imports) ...
-from datetime import datetime  # <-- Add datetime
-
-# --- Import from your new database.py file ---
-from database import SessionLocal, engine, Base, Scan, Feedback, get_db
-from sqlalchemy.orm import Session # <-- Add Session
-
-# --- Tell SQLAlchemy to create the tables ---
-# This will create the 'phisheye.db' file and the tables
-Base.metadata.create_all(bind=engine)
-
-
-app = FastAPI()
-
-# ... (Your CORS middleware setup) ...
-# ... (Your load_tranco_list function) ...
-# ... (Your model/vectorizer loading) ...
-
-class URLItem(BaseModel):
-    url: str
-
-# NEW: Pydantic model for receiving feedback
-class FeedbackItem(BaseModel):
-    scan_id: int
-    report_type: str # 'false_positive' or 'false_negative'
-
-
-# --- Modify your /scan_url endpoint ---
-@app.post("/scan_url")
-async def scan_url(item: URLItem, db: Session = Depends(get_db)): # <-- Add db session
-    url = item.url.strip()
-
-    if not url:
-        raise HTTPException(status_code=400, detail="URL cannot be empty.")
-    
-    # ... (Your basic URL validation) ...
-
-    # We will add Caching (Feature 2) logic here later.
-    # For now, we just scan and log.
-
-    try:
-        scan_status = ""
-        scan_confidence = 0.0
-        scan_whitelisted = False
-        scan_features = {} # To store the detailed features
-
-        # --- RULE-BASED WHITELIST OVERRIDE ---
-        ext = tldextract.extract(url)
-        if ext.top_domain_under_public_suffix and ext.top_domain_under_public_suffix.lower() in MASTER_WHITELIST_SET:
-            scan_status = "safe"
-            scan_confidence = 0.999
-            scan_whitelisted = True
-            scan_features = {
-                'reason': 'Whitelisted Domain',
-                'domain': ext.top_domain_under_public_suffix,
-            }
-
-        else:
-            # --- ML Model Prediction ---
-            scan_whitelisted = False
-            
-            # (Your feature extraction and prediction logic)
-            url_tfidf = vectorizer.transform([url])
-            url_additional = pd.DataFrame([extract_highly_discriminative_features(url)])
-            url_combined = hstack([url_tfidf, url_additional])
-            
-            prediction = model_pipeline.predict(url_combined)[0]
-            prediction_proba = model_pipeline.predict_proba(url_combined)[0]
-            
-            if prediction == 1: # Assuming 1 is malicious
-                scan_status = "dangerous"
-                scan_confidence = prediction_proba[1]
-            else:
-                scan_status = "safe"
-                scan_confidence = prediction_proba[0]
-
-            if 0.4 < scan_confidence < 0.6:
-                 scan_status = "suspicious"
-            
-            # (Your detailed_features dictionary creation)
-            scan_features = {
-                'url_length': len(url),
-                # ... (all your other features) ...
-            }
-
-        # --- 🚀 DATABASE LOGGING (FEATURE 1) ---
-        new_scan = Scan(
-            url=url,
-            status=scan_status,
-            confidence=float(scan_confidence),
-            was_whitelisted=scan_whitelisted,
-            timestamp=datetime.utcnow()
-        )
-        db.add(new_scan)
-        db.commit()
-        db.refresh(new_scan) # Get the new_scan.id back
-        # --- End of Logging ---
-
-        return {
-            "scan_id": new_scan.id, # <-- SEND THE NEW ID TO THE FRONTEND
-            "status": scan_status,
-            "confidence": float(scan_confidence),
-            "url": url,
-            "detailed_features": scan_features
-        }
-
-    except Exception as e:
-        print(f"Error during URL scanning: {e}")
-        db.rollback() # Rollback any db changes on error
-        raise HTTPException(status_code=500, detail=f"Internal server error during scan: {e}")
-
-
-# --- 🚀 NEW ENDPOINT FOR FEEDBACK (FEATURE 1) ---
-@app.post("/report_feedback")
-async def report_feedback(item: FeedbackItem, db: Session = Depends(get_db)):
+async def report_feedback(
+    item: FeedbackItem, 
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user) # <-- 1. REMOVED | None
+):
     """
     Endpoint for users to report an incorrect prediction.
+    REQUIRES a valid API Key.
     """
     
-    # 1. Check if the original scan exists
+    # 2. If no user, dependency will raise 401, so we know user is not None
+    if current_user is None:
+         raise HTTPException(status_code=401, detail="You must be logged in to report feedback.")
+
     scan = db.query(Scan).filter(Scan.id == item.scan_id).first()
     if not scan:
         raise HTTPException(status_code=404, detail="Original scan not found.")
         
-    # 2. Check if feedback for this scan already exists
-    existing_feedback = db.query(Feedback).filter(Feedback.scan_id == item.scan_id).first()
+    existing_feedback = db.query(Feedback).filter(
+        Feedback.scan_id == item.scan_id,
+        Feedback.user_id == current_user.id
+    ).first()
+    
     if existing_feedback:
-        return {"message": "Feedback for this scan has already been recorded."}
+        return {"message": "You have already reported feedback for this scan."}
         
-    # 3. Save the new feedback
     new_feedback = Feedback(
         scan_id=item.scan_id,
         report_type=item.report_type,
-        timestamp=datetime.utcnow()
+        timestamp=datetime.utcnow(),
+        user_id=current_user.id  # <-- 3. ADD THE USER ID
     )
     db.add(new_feedback)
     db.commit()
     
-    print(f"Feedback received for scan {item.scan_id}: {item.report_type}")
+    print(f"Feedback received for scan {item.scan_id} from user {current_user.email}")
     
     return {
         "message": "Feedback successfully recorded.",
@@ -633,3 +553,43 @@ async def report_feedback(item: FeedbackItem, db: Session = Depends(get_db)):
 @app.get("/")
 async def read_root():
     return {"message": "URL Scanner Backend is running!"}
+
+# --- NEW: USER REGISTRATION ENDPOINT ---
+@app.post("/register", response_model=UserResponse)
+async def register_user(user: UserCreate, db: Session = Depends(get_db)):
+    # Check if user already exists
+    db_user = db.query(User).filter(User.email == user.email).first()
+    if db_user:
+        raise HTTPException(status_code=400, detail="Email already registered")
+    
+    # Hash password and create API Key
+    hashed_pass = hash_password(user.password)
+    new_api_key = create_api_key()
+
+    # Create new user
+    new_user = User(
+        email=user.email,
+        hashed_password=hashed_pass,
+        api_key=new_api_key 
+    )
+    db.add(new_user)
+    db.commit()
+    db.refresh(new_user)
+
+    return {"email": new_user.email, "api_key": new_user.api_key}
+
+# --- NEW: USER LOGIN ENDPOINT ---
+@app.post("/login", response_model=UserResponse)
+async def login_user(form_data: UserLogin, db: Session = Depends(get_db)):
+    # Find user by email
+    db_user = db.query(User).filter(User.email == form_data.email).first()
+
+    # Check if user exists and password is correct
+    if not db_user or not verify_password(form_data.password, db_user.hashed_password):
+        raise HTTPException(
+            status_code=401,
+            detail="Incorrect email or password"
+        )
+    
+    # Return their existing details
+    return {"email": db_user.email, "api_key": db_user.api_key}

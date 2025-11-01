@@ -7,10 +7,47 @@
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <div class="container">
-
+    <header class="header">
         <h1>PhishEye</h1>
+        <nav id="authNav">
+            <!-- This part will be controlled by JS -->
+            <button id="showAuthButton" class="auth-button">Login / Register</button>
+            <span id="userInfo" class="hidden"></span>
+            <button id="logoutButton" class="auth-button hidden">Logout</button>
+        </nav>
+    </header>
 
+    <!-- === NEW AUTH CONTAINER (HIDDEN) === -->
+    <div id="authContainer" class="auth-container hidden">
+        <div class="auth-box">
+            <div class="auth-tabs">
+                <button id="showLoginTab" class="auth-tab-button-active" data-form="loginForm">Login</button>
+                <button id="showRegisterTab" class="auth-tab-button" data-form="registerForm">Register</button>
+            </div>
+
+            <!-- Login Form -->
+            <form id="loginForm">
+                <h2>Login</h2>
+                <input type="email" id="loginEmail" placeholder="Email" required>
+                <input type="password" id="loginPassword" placeholder="Password" required>
+                <button type="submit" id="loginButton">Login</button>
+            </form>
+
+            <!-- Register Form -->
+            <form id="registerForm" class="hidden">
+                <h2>Register</h2>
+                <input type="email" id="registerEmail" placeholder="Email" required>
+                <input type="password" id="registerPassword" placeholder="Password" required>
+                <button type="submit" id="registerButton">Create Account</button>
+            </form>
+
+            <p id="authMessage" class="auth-message"></p>
+            <button id="closeAuthButton" class="close-auth-button">&times;</button>
+        </div>
+    </div>
+
+    <!-- === CONTAINER === -->
+    <div class="container">
         <div class="input-group">
             <input type="text" id="urlInput" placeholder="Enter URL to scan..." required>
             <button id="scanButton">Scan URL</button>
@@ -22,37 +59,46 @@
         </div>
 
         <div id="result" class="result-box">
-            <p>Enter a URL and click to 'Scan' to check its safety!</p>
+            <p id="resultStatusText">Enter a URL to click 'Scan' to check it's safety!</p>
+            
+            <!-- NEW: Tiered Content -->
+            <p id="confidenceText" class="hidden"></p>
+            <p id="guestMessage" class="guest-message-hidden">
+                <a href="#" id="loginForDetails">Login</a> or <a href="#" id="registerForDetails">Register</a> to see detailed results and report errors!
+            </p>
 
             <div id="detailedResults" class="detailed-results-hidden">
                 <h3>Scan Details:</h3>
                 <dl id="detailsList">
-                    <!-- Details will be inserted here by JavaScript-->
+                    <!-- Details will be inserted here -->
                 </dl>
             </div>
-            
+
+            <!-- NEW: Feedback Section (Hidden)-->
+            <div id="feedbackContainer" class="feedback-container-hidden">
+                <p>Was this result correct?</p>
+                <button id="reportIncorrectButton" class="feedback-button report-incorrect">Report Incorrect</button>
+                <p id="feedbackThanks" class="hidden">Thanks for your feedback!</p>
+            </div>
         </div>
-        
-        <div id="scanHistory" class="history-section">
+
+        <div id="scanHistory" class="history-section history-hidden">
             <h2>Scan History</h2>
             <ul id="historyList">
-                <!--History items will be loaded here-->
+                <!-- History items will be loaded here -->
             </ul>
             <button id="clearHistoryButton" class="clear-button">Clear History</button>
         </div>
 
         <div id="aboutSection" class="about-section">
             <h2>About PhishEye</h2>
-            <p>PhishEye is a URL scanning tool designed to help you identify potentially malicious or 
-                phishing websites. It uses a Machine Learning model to analyze various features of a 
-                URL and predict whether it's safe, suspicious, or dangerous. 
+            <p>
+                PhishEye is a URL scanning tool designed to help you identify potentially malicious or phishing websites. 
+                It uses a Machine Learning model to analyze various features of a URL and predict whether it's safe, suspicious, or dangerous.
+                Our goal is to provide a quick and easy way to check URLs before you click, helping to protect you from online threats.
+                Always exercise caution when browsing the internet, even with tools like PhishEye.
             </p>
-            <p>Our goal is to provide a quick and easy way to check URLs before you click, 
-                helping to protect you from online threats.
-            </p>
-            <p>Always exercise caution when browsing the internet, even with tools like PhishEye.</p>
         </div>
-
     </div>
 
     <script src="script.js"></script>

@@ -1,19 +1,351 @@
-document.addEventListener('DOMContentLoaded', () => {
+document .addEventListener('DOMContentLoaded', () => {
+    // --- STATE ---
+    let scanHistory = [];
+    const MAX_HISTORY_ITEMS = 10;
+    let currentApiKey = null; // Stores the user's API key
+    let currentScanId = null; // Stores the ID of the last scan for feedback
+
+    // --- API ---
+    const API_BASE_URL = 'http://127.0.0.1:8000'; // FastAPI backend
+
+    // --- DOM ELEMENTS ---
+    // Auth UI
+    const authNav = document.getElementById('authNav');
+    const showAuthButton = document.getElementById('showAuthButton');
+    const userInfo = document.getElementById('userInfo');
+    const logoutButton = document.getElementById('logoutButton');
+
+    // Auth Modal
+    const authContainer = document.getElementById('authContainer');
+    const closeAuthButton = document.getElementById('closeAuthButton');
+    const showLoginTab = document.getElementById('showLoginTab');
+    const showRegisterTab = document.getElementById('showResgisterTab');
+    const loginForm = document.getElementById('loginForm');
+    const registerForm = document.getElementById('registerForm');
+    const authMessage = document.getElementById('authMessage');
+    const loginEmail = document.getElementById('loginEmail');
+    const loginPassword = document.getElementById('loginPassword');
+    const registerEmail = document.getElementById('registerEmail');
+    const registerPassword = document.getElementById('registerPassword');
+    const loginForDetails = document.getElementById('loginForDetails');
+    const registerForDetails = document.getElementById('registerForDetails');
+
+    // Scanner UI
     const urlInput = document.getElementById('urlInput');
     const scanButton = document.getElementById('scanButton');
-    const resultBox = document.getElementById('result');
+    const resultBox = document.getElementById('resultBox');
     const loadingSpinner = document.getElementById('loadingSpinner');
+    const resultStatusText = document.getElementById('resultStatusText');
+    const confidenceText = document.getElementById('confidenceText');
+    const guestMessage = document.getElementById('guestMessage');
+
+    // Detailed Results
+    const detailedResultsDiv = document.getElementById('detailedResults');
+    const detailsList = document.getElementById('detailsList');
+
+    // Feedback UI
+    const feedbackContainer = document.getElementById('feedbackContainer');
+    const reportIncorrectButton = document.getElementById('reportIncorrectButton');
+    const feedbackThanks = document.getElementById('feedbackThanks');
+
+    // History UI 
     const scanHistorySection = document.getElementById('scanHistory');
     const historyList = document.getElementById('historyList');
     const clearHistoryButton = document.getElementById('clearHistoryButton');
-    const detailedResultsDiv = document.getElementById('detailedResults'); // NEW: Get detailed results div
-    const detailsList = document.getElementById('detailsList');           // NEW: Get UL for details
 
-    let scanHistory = [];
-    const MAX_HISTORY_ITEMS = 10;
+    // --- AUTHENTICATION FUNCTIONS ---
 
-    // --- History Functions (No changes needed here, but keeping for context) ---
+    // Checks localStorage for API key and e-mail, then updates the UI
+    function checkLoginState() {
+        currentApiKey = localStorage.getItem('phishEyeApiKey');
+        const userEmail = localStorage.getItem('phishEyeUserEmail');
 
+        if (currentApiKey && userEmail) {
+            // User is logged in
+            userInfo.textContent = 'Welcome, ${user_email}';
+            userInfo.classList.remove('hidden');
+            logoutButton.classList.remove('hidden');
+            showAuthButton.classList.add('hidden');
+        } else {
+            // User is a guest
+            userInfo.textContent = '';
+            userInfo.classList.add('hidden');
+            logoutButton.classList.add('hidden');
+            showAuthButton.classList.remove('hidden');
+        }
+        authContainer.classList.add('hidden'); // Ensure modal is hidden on load
+    }
+
+
+    /**
+     * Shows the authentication modal.
+     * @param {'login' | 'register'} showTab - Which tab to open by default
+     */
+    function showAuthModal(showTab = 'login') {
+        authContainer.classList.remove('hidden');
+        if (showTab === 'login') {
+            showLoginTab.click();
+        } else {
+            showRegisterTab.click();
+        }
+        authMessage.textContent = '';
+    }
+
+    function hideAuthModal() {
+        authContainer.classList.add('remove');
+    }
+
+
+    /**
+     * Saves user details to localStorage and updates UI after login/register.
+     * @param {string} email - User's email
+     * @param {string} apiKey - User's new API key
+     */
+    function handleAuthSuccess(email, apiKey) {
+        localStorage.setItem('phishEyeApiKey', apiKey);
+        localStorage.setItem('phishEyeUserEmail', email);
+        currentApiKey = apiKey;
+        checkLoginState();
+        hideAuthModal();
+        clearResult(); // Clear previous scan result
+    }
+
+    // Clears user's details from localStorage and updates UI
+    function handleLogout() {
+        localStorage.removeItem('phishEyeApiKey');
+        localStorage.removeItem('phishEyeUserEmail');
+        currentApiKey = null;
+        checkLoginState();
+        clearResult();
+    }
+
+    /**
+     * Handles the submit event for both Login and register form
+     * @param {Event} e - The form submit event
+     * @param {'/login' | '/register'} endpoint - The API endpoint to call
+     */
+    async function handleAuthFormSubmit(e, endpoint) {
+        e.preventDefault();
+        authMessage.textContent = '';
+
+        const isRegister = endpoint === '/register';
+        const email = isRegister ? registerEmail.value : loginEmail.value;
+        const password = isRegister ? registerPassword.value : loginPassword.value;
+
+        if (!email || !password) {
+            authMessage.textContent = 'Please fill out all fields.';
+            return;
+        }
+
+        try {
+            const response = await fetch('${API_BASE_URL}${endpoint}', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email, password })
+            });
+
+            const data = await response.json();
+
+            if (!response.ok) {
+                authMessage.textContent = data.detail || 'An unknown error occured.';
+            } else {
+                handleAuthSuccess(data.email, data.api_key);
+            }
+        } catch (error) {
+            console.error('Auth Error: ${error}');
+            authMessage.textContent = 'Failed to connect to the server.';
+        }
+    }
+
+
+    // --- SCANNER & RESULT FUNCITON ---
+
+    // Resets the result box to its default state.
+    function clearResult() {
+        resultBox.className = 'result-box';
+        resultStatusText.textContent = "Enter a URL and click 'Scan' to check its safety!";
+        confidenceText.classList.add('hidden');
+        guestMessage.classList.add('hidden');
+        detailedResultsDiv.classList.add('detailed-results-hidden');
+        detailsList.innerHTML ='';
+        feedbackContainer.classList.add('hidden');
+        feedbackThanks.classList.add('hidden');
+        currentScanId = null;
+    }
+
+    
+    /**
+     * Updates the UI with the scan results. Handles tiered display.
+     * @param {object} data - The response data from /scan_url
+     */
+    function updateResult(data) {
+        loadingSpinner.classList.add('spinner-hidden');
+        resultBox.className = 'result-box'; // Reset
+
+        currentScanId = data.scan_id; // Always store the scan_id
+
+        if (data.status === 'safe') {
+            resultBox.classList.add('safe');
+            resultStatusText.textContent = 'This URL appears to be SAFE.'
+        } else if (data.status === 'suspicious') {
+            resultBox.classList.add('suspicious');
+            resultStatusText.textContent = 'This URL is SUSPICIOUS. Exercise caution.';
+        } else if (data.status === 'dangerous') {
+            resultBox.classList.add('dangerous');
+            resultStatusText.textContent = 'This URL is DANGEROUS! Do NOT Visit.';
+        }
+
+        // --- TIERED CONTENT ---
+        if (data.confidence !== undefined) {
+            // This is a registered user (full response)
+            confidenceText.textContent = '(Confidence: ${(data.confidence * 100).toFixed(2)}%)';
+            confidenceText.classList.remove('hidden');
+            guestMessage.classList.add('hidden');
+            renderDetailedFeatures(data.detailed_features);
+            feedbackContainer.classList.remove('hidden');
+            feedbackThanks.classList.add('hidden'); // Reset thanks message
+
+            // Add to history (only for registered users)
+            addHistoryItem(urlInput.value.trim(), data.status, data.confidence);
+        } else {
+            // This is a GUEST (limited response)
+            confidenceText.classList.add('hidden');
+            guestMessage.classList.remove('hidden'); // Show "Login for details"
+            detailedResultsDiv.classList.add('detailed-results-hidden');
+            feedbackContainer.classList.add('hidden');
+        }
+    }
+
+
+    /**
+     * Renders the key-value pairs of detailed features
+     */
+    function renderDetailedFeatures(details) {
+        detailsList.innerHTML = '';
+        if (details && Object.keys(details).length > 0) {
+            detailedResultsDiv.classList.remove('detailed-results-hidden');
+            for (const key in details) {
+                if (details.hasOwnProperty(key)) {
+                    const dt = document.createElement('dt');
+                    dt.textContent = formatFeatureName(key);
+                    detailsList.appendChild(dt);
+
+                    const dd = document.createElement('dd');
+                    dd.textContent = details[key];
+                    detailsList.appendChild(dd)
+                }
+            }
+        } else {
+            detailedResultsDiv.classList.add('detailed-results-hidden');
+        }
+    }
+
+
+    /**
+     * Formats feature names for display
+     */
+    function formatFeatureName(name) {
+        return name
+            .replace(/_/g, ' ')
+            .replace(/\b\w/g, char => char.toUpperCase());
+    }
+
+
+    /**
+     * Handles the main scan button click
+     */
+    async function handleScan() {
+        const url = urlInput.value.trim();
+
+        // Client-side validation
+        if (!url) {
+            alert('Please enter a URL.');
+        }
+        const urlRegex = /^(https?:\/\/(?:www\.|(?!www))[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s]{2,}|www\.[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s]{2,}|https?:\/\/[a-zA-Z0-9]+\.[^\s]{2,}|[a-zA-Z0-9]+\.[^\s]{2,})$/i;
+        if (!urlRegex.test(url)) {
+            alert('Please enter a valid URL (e.g., https://example.com).');
+            return;
+        }
+
+        clearResult(); // Clear previous results
+        loadingSpinner.classList.remove('spinner-hidden');
+        resultStatusText.textContent = 'Scanning...';
+
+        try {
+            const headers = { 'Content-Type': 'application/json' };
+            if (currentApiKey) {
+                headers['Authorization'] = currentApiKey; // Add API Key if logged in
+            }
+
+            const response = await fetch('${API_BASE_URL}/scan_url', {
+                method: 'POST',
+                headers: headers,
+                body: JSON.stringify({ url: url }),
+            });
+
+            const data = await response.json();
+
+            if (!response.ok) {
+                // This catches 4xx and 5xx errors from the backend
+                throw new Error(data.detail || 'An error occured during scanning.');
+            }
+
+            // Handle successful scan (guest or user)
+            updateResult(data);
+        } catch (error) {
+            console.error('Scan Error:', error);
+            loadingSpinner.classList.add('spinner-hidden');
+            resultBox.className = 'result-box dangerous';
+            resultStatusText.textContent = 'Scan Error: ${error.message}';
+        }
+    }
+
+
+    /**
+     * Sends feedback for an incorrect scan
+     * @param {'false_positive' | 'false_negative'} reportType
+     */
+    async function sendFeedback(reportType) {
+        if (!currentApiKey || !currentScanId) {
+            alert('You must be logged in to report feedback.');
+            return;
+        }
+
+        try {
+            const response = await fetch('${API_BASE_URL}/report_feedback', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': currentApiKey
+                },
+                body: JSON.stringify({
+                    scan_id: currentScanId,
+                    report_type: reportType
+                })
+            });
+            const data = await response.json();
+
+            if (!response.ok) {
+                throw new Error(data.detail || 'Could not send feedback.');
+            }
+
+            // Show "Thanks" message and hide button
+            feedbackThanks.classList.remove('hidden');
+            reportIncorrectButton.classList.add('hidden'); // Hide to prevent double submit
+
+            // Re-show button after a delay
+            setTimeout(() => {
+                feedbackThanks.classList.add('hidden');
+                reportIncorrectButton.classList.remove('hidden');
+            }, 3000);
+        } catch (error) {
+            console.error('Feedback Error:', error);
+            alert('Error: ${error.message}');
+        }
+    }
+
+
+    // --- HISTORY FUNCTIONS ---
     function loadHistory() {
         const storedHistory = localStorage.getItem('urlScanHistory');
         if (storedHistory) {
@@ -30,7 +362,6 @@ document.addEventListener('DOMContentLoaded', () => {
     function addHistoryItem(url, status, confidence) {
         const timestamp = new Date().toLocaleString();
         scanHistory.unshift({ url, status, confidence, timestamp });
-
         if (scanHistory.length > MAX_HISTORY_ITEMS) {
             scanHistory = scanHistory.slice(0, MAX_HISTORY_ITEMS);
         }
@@ -39,31 +370,68 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function renderHistory() {
         historyList.innerHTML = '';
-
         if (scanHistory.length === 0) {
             scanHistorySection.classList.add('history-hidden');
             return;
-        } else {
-            scanHistorySection.classList.remove('history-hidden');
         }
-
+        scanHistorySection.classList.remove('history-hidden');
         scanHistory.forEach(item => {
             const listItem = document.createElement('li');
-
             const urlSpan = document.createElement('span');
             urlSpan.classList.add('history-url');
             urlSpan.textContent = item.url;
             listItem.appendChild(urlSpan);
-
             const statusSpan = document.createElement('span');
             statusSpan.classList.add('history-status', item.status);
             statusSpan.textContent = item.status.toUpperCase();
             listItem.appendChild(statusSpan);
-
             historyList.appendChild(listItem);
         });
     }
 
+
+    // --- EVENT LISTENERS ---
+
+    // Auth Modal
+    showAuthButton.addEventListener('click', () => showAuthModal('login'));
+    closeAuthButton.addEventListener('click', hideAuthModal);
+    loginForDetails.addEventListener('click', (e) => { e.preventDefault(); showAuthModal('login'); });
+    registerForDetails.addEventListener('click', (e) => { e.preventDefault(); showAuthModal('register'); });
+    logoutButton.addEventListener('click', handleLogout);
+
+    // Auth Tabs
+    showLoginTab.addEventListener('click', () => {
+        loginForm.classList.remove('hidden');
+        registerForm.classList.add('hidden');
+        showLoginTab.classList.add('active');
+        showRegisterTab.classList.remove('active');
+        authMessage.textContent = '';
+    });
+    showRegisterTab.addEventListener('click', () => {
+        loginForm.classList.add('hidden');
+        registerForm.classList.remove('hidden');
+        showLoginTab.classList.remove('active');
+        showRegisterTab.classList.add('active');
+        authMessage.textContent = '';
+    });
+
+    // Auth Forms
+    loginForm.addEventListener('submit', (e) => handleAuthFormSubmit(e, '/login'));
+    registerForm.addEventListener('submit', (e) => handleAuthFormSubmit(e, '/register'));
+
+    // Scanner
+    scanButton.addEventListener('click', handleScan);
+    urlInput.addEventListener('keypress', (event) => {
+        if (event.key === 'Enter') scanButton.click();
+    });
+
+
+    // Feedback
+    // Assuming "incorrect" means a "false negative" (it was dangerous)
+    // or "false positive" (it was safe). Default to false_negative
+    reportIncorrectButton.addEventListener('click', () => sendFeedback('false_negative'));
+
+    // History
     clearHistoryButton.addEventListener('click', () => {
         if (confirm('Are you sure you want to clear all scan history?')) {
             scanHistory = [];
@@ -71,176 +439,8 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    function renderDetailedFeatures(details) {
-        detailsList.innerHTML = ''; // Clear previous details
 
-        if (details && Object.keys(details).length > 0) {
-            detailedResultsDiv.classList.remove('detailed-results-hidden'); // Show the container
-            for (const key in details) {
-                if (details.hasOwnProperty(key)) {
-                    const dt = document.createElement('dt');
-                    dt.textContent = formatFeatureName(key); // Format key for display
-                    detailsList.appendChild(dt);
-
-                    const dd = document.createElement('dd');
-                    dd.textContent = details[key];
-                    detailsList.appendChild(dd);
-                }
-            }
-        } else {
-            detailedResultsDiv.classList.add('detailed-results-hidden'); // Hide the container
-        }
-    }
-
-    // Helper function to format feature names (e.g., "url_length" -> "URL Length")
-    function formatFeatureName(name) {
-        return name
-            .replace(/_/g, ' ') // Replace underscores with spaces
-            .replace(/\b\w/g, char => char.toUpperCase()); // Capitalize first letter of each word
-    }
-
-
-    // Function to update the result box with status and styling (MODIFIED)
-    function updateResult(status, confidence = null, messageOverride = null, details = null) {
-        loadingSpinner.classList.add('spinner-hidden');
-        resultBox.className = 'result-box'; // Reset classes
-
-        let message = '';
-
-        // Always ensure the main message paragraph exists
-        let mainMessageP = resultBox.querySelector('p');
-        if (!mainMessageP) {
-            mainMessageP = document.createElement('p');
-            resultBox.prepend(mainMessageP);
-        }
-
-        // Handle detailed results visibility and rendering
-        if (details && Object.keys(details).length > 0) {
-            detailedResultsDiv.classList.remove('detailed-results-hidden');
-            renderDetailedFeatures(details);
-        } else {
-            detailedResultsDiv.classList.add('detailed-results-hidden');
-            detailsList.innerHTML = ''; // Clear any old details
-        }
-
-
-        if (messageOverride) {
-            message = messageOverride;
-        } else if (status === 'safe') {
-            resultBox.classList.add('safe');
-            message = 'This URL appears to be SAFE.';
-        } else if (status === 'suspicious') {
-            resultBox.classList.add('suspicious');
-            message = 'This URL is SUSPICIOUS. Exercise caution.';
-        } else if (status === 'dangerous') {
-            resultBox.classList.add('dangerous');
-            message = 'This URL is DANGEROUS! Do NOT Visit.';
-        } else if (status === 'validation-error') {
-            resultBox.classList.add('suspicious'); // Use suspicious for client-side validation errors
-            message = 'Please enter a valid URL (e.g., https://example.com).';
-        } else if (status === 'error') {
-            resultBox.classList.add('dangerous'); // Use dangerous for backend errors
-            message = `Backend Error: ${messageOverride || 'An error occurred during scanning.'}`;
-        }
-        else {
-            message = 'An unexpected status was received from the scanner.';
-        }
-
-        if (confidence !== null && status !== 'validation-error' && status !== 'error') {
-            message += ` (Confidence: ${(confidence * 100).toFixed(2)}%)`;
-        }
-
-        mainMessageP.textContent = message; // Update the main message
-
-
-        // Add to history if it's a successful scan from backend
-        if (['safe', 'suspicious', 'dangerous'].includes(status)) {
-            addHistoryItem(urlInput.value.trim(), status, confidence);
-        }
-    }
-
-    // Event listener for the scan button (MODIFIED)
-    scanButton.addEventListener('click', async () => {
-        const url = urlInput.value.trim();
-
-        if (!url) {
-            updateResult('validation-error', null, 'URL cannot be empty. Please enter a URL.');
-            return;
-        }
-
-        // Clear previous detailed results when a new scan starts
-        detailedResultsDiv.classList.add('detailed-results-hidden');
-        detailsList.innerHTML = '';
-
-        // A more robust URL regex for client-side validation
-        // This regex is quite strict, you might want to simplify it if it's too restrictive.
-        // For example, just checking for http/https prefix might be enough for a quick client-side check.
-        const urlRegex = /^(https?:\/\/(?:www\.|(?!www))[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s]{2,}|www\.[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s]{2,}|https?:\/\/[a-zA-Z0-9]+\.[^\s]{2,}|[a-zA-Z0-9]+\.[^\s]{2,})$/i;
-
-        if (!urlRegex.test(url)) {
-            updateResult('validation-error');
-            return;
-        }
-
-        resultBox.className = 'result-box'; // Reset classes
-        // Ensure the main message paragraph is present and updated
-        let mainMessageP = resultBox.querySelector('p');
-        if (!mainMessageP) {
-            mainMessageP = document.createElement('p');
-            resultBox.prepend(mainMessageP);
-        }
-        mainMessageP.textContent = 'Scanning...';
-
-        loadingSpinner.classList.remove('spinner-hidden');
-
-        try {
-            // Ensure this matches your FastAPI backend's address and port
-            const response = await fetch('http://127.0.0.1:8000/scan_url', { // <-- Check this port!
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ url: url }),
-            });
-
-            if (!response.ok) {
-                // If the backend returns an error status (e.g., 400, 500),
-                // we should still try to parse the JSON for a detailed message.
-                const errorData = await response.json();
-                throw new Error(errorData.detail || `HTTP Error! status: ${response.status}`);
-            }
-
-            const data = await response.json();
-            console.log(data);
-
-            if (data.status === 'error') {
-                // This handles the specific 'error' status returned by your FastAPI's
-                // client-side URL validation (e.g., if the regex in main.py fails)
-                updateResult('error', null, data.message || 'An internal error occurred in the scanner backend.');
-            } else {
-                // Corrected: Use data.detailed_features as returned by main.py
-                updateResult(data.status, data.confidence, null, data.detailed_features);
-            }
-
-        } catch (error) {
-            console.error('Network Error scanning URL:', error);
-            loadingSpinner.classList.add('spinner-hidden');
-            resultBox.className = 'result-box dangerous';
-            // Ensure the main message paragraph is present and updated
-            let mainMessageP = resultBox.querySelector('p');
-            if (!mainMessageP) {
-                mainMessageP = document.createElement('p');
-                resultBox.prepend(mainMessageP);
-            }
-            mainMessageP.textContent = `Scan Error: ${error.message}. Make sure the backend is running and accessible.`;
-        }
-    });
-
-    urlInput.addEventListener('keypress', (event) => {
-        if (event.key === 'Enter') {
-            scanButton.click();
-        }
-    });
-
-    loadHistory();
-});
+    // --- INITIALIZATION ---
+    loadHistory(); // Load history from localStorage
+    checkLoginState(); // Check if user is already logged in
+})
