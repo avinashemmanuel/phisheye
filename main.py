@@ -6,15 +6,21 @@ from fastapi.middleware.cors import CORSMiddleware
 import joblib
 import re
 import numpy as np
-from urllib.parse import urlparse
-import tldextract # Import tldextract here
 from urllib.parse import urlparse, parse_qs
 import pandas as pd
 from scipy.sparse import hstack
 import csv
 from datetime import datetime, timedelta
-from database import SessionLocal, engine, Base, Scan, Feedback, get_db, User
+from typing import Union # For Python 3.9 compatibility
+import tldextract
+from starlette.concurrency import run_in_threadpool # <-- IMPORT THIS
+from scipy.sparse import hstack, csr_matrix
+
+# --- Database Imports ---
+from database import SessionLocal, engine, Base, Scan, Feedback, User, get_db
 from sqlalchemy.orm import Session
+
+# --- Auth Imports ---
 from auth import (
     hash_password,
     verify_password,
@@ -23,80 +29,59 @@ from auth import (
 )
 
 # --- Tell SQLAlchemy to create the tables ---
-# This will create the phisheye.db file and the tables
 Base.metadata.create_all(bind=engine)
 
 
 app = FastAPI()
 
-# Configure CORS
-origins = [
-    "http://localhost",
-    "http://localhost:8001",
-    "http://127.0.0.1",
-    "http://127.0.0.1:8001",
-]
-
+# --- Configure CORS ---
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"], # Allow all for local dev
     allow_credentials=False,
-    allow_methods=["POST", "OPTIONS"],
+    allow_methods=["POST", "OPTIONS", "GET"], # <-- ADDED GET
     allow_headers=["*"],
 )
 
+# --- Whitelist Loading ---
 def load_tranco_list(csv_path="top-1m.csv"):
     """Loads the Tranco domain list from a CSV into a set for fast lookup."""
     print(f"Attempting to load Tranco whitelist from {csv_path}...")
     tranco_domains = set()
-
     try:
         with open(csv_path, 'r', encoding='utf-8') as f:
             reader = csv.reader(f)
             for row in reader:
                 if len(row) == 2:
-                    # The format is rank,domain
                     tranco_domains.add(row[1])
-
-        if tranco_domains:
-            print(f"Successfully loaded {len(tranco_domains)} domains into the whitelist.")
-        else:
-            print("WARNING: Tranco list was found but appears to be empty")
+        print(f"Successfully loaded {len(tranco_domains)} domains into the whitelist.")
         return tranco_domains
-    
     except FileNotFoundError:
         print(f"CRITICAL ERROR: '{csv_path}' not found.")
-        print("Whitelist will be empty. Please download the file.")
         return set()
-    
     except Exception as e:
         print(f"CRITICAL ERROR: Could not load Tranco List: {e}")
         return set()
 
 MASTER_WHITELIST_SET = load_tranco_list()
 
-# --- Load the trained Pipeline model ---
+# --- Load ML Model ---
 try:
-    model_pipeline = joblib.load('model/phishing_detector_model.joblib') # Changed
-    vectorizer = joblib.load('model/tfidf_vectorizer.joblib') # Changed
+    model_pipeline = joblib.load('model/phishing_detector_model.joblib')
+    vectorizer = joblib.load('model/tfidf_vectorizer.joblib')
     print("Model pipeline and vectorizer loaded successfully.")
-except FileNotFoundError:
-    print("Error: Model or vectorizer file not found. Please ensure 'ml_model.py' has been run to train and save the model.")
-    exit(1)
 except Exception as e:
     print(f"Error loading model pipeline or vectorizer: {e}")
     exit(1)
 
+# --- Pydantic Models ---
 class URLItem(BaseModel):
     url: str
 
-
-# NEW: Pydantic model for receiving feedback
 class FeedbackItem(BaseModel):
     scan_id: int
     report_type: str # 'false_positive' or 'false_negative'
 
-# NEW: Pydantic model for user registration and login
 class UserCreate(BaseModel):
     email: str
     password: str
@@ -261,75 +246,71 @@ KNOWN_LEGITIMATE_DOMAINS_LIST = [
     'iitd.ac.in',        # IIT Delhi (example)
 ]
 
-# --- Feature Extraction Function (Copied from ml_model.py) ---
-# You need this function in main.py because the model expects these features
-# alongside the TF-IDF features.
-def extract_highly_discriminative_features(url):
+# --- Feature Extraction Function ---
+# THIS IS NOW AN ASYNC FUNCTION
+async def extract_highly_discriminative_features(url):
     """
     Extracts a comprehensive set of highly discriminative features from a URL.
-    Focuses on known phishing indicators and structural anomalies.
-    Returns a list of numerical features.
+    Runs tldextract in a threadpool to avoid blocking.
     """
     features = []
     parsed_url = urlparse(url)
-    ext = tldextract.extract(url) # Extracts subdomain, domain, suffix
+    
+    # --- RUN BLOCKING I/O IN THREADPOOL ---
+    try:
+        # This runs tldextract in a separate thread
+        ext = await run_in_threadpool(tldextract.extract, url)
+    except Exception as e:
+        print(f"TLDExtract failed for url {url}: {e}")
+        # Create a dummy object so the rest of the code doesn't fail
+        class DummyExt:
+            domain = ""
+            suffix = ""
+            subdomain = ""
+            top_domain_under_public_suffix = "" # Use property
+                
+        ext = DummyExt()
+    # --- END OF THREADPOOL ---
 
     # 1. URL Length
     features.append(len(url))
-
-    # 2. Number of dots in the hostname (more dots can indicate subdomains used for trickery)
+    # 2. Number of dots
     features.append(parsed_url.hostname.count('.') if parsed_url.hostname else 0)
-
-    # 3. Presence of 'https' (1 if present, 0 otherwise)
+    # 3. Presence of 'https'
     features.append(1 if parsed_url.scheme == 'https' else 0)
-
-    # 4. Presence of common phishing keywords in the entire URL
-    phishing_keywords = ['login', 'signin', 'verify', 'webscr', 'confirm', 'billing', 'admin', 'panel', 'cpanel', 'wp-admin', 'portal', 'client', 'myaccount', 'credential', 'authorize', 'suspicious', 'alert', 'compromised', 'deactivated', 'restricted', 'urgent', 'action', 'security', 'update']
+    # 4. Phishing keywords
+    phishing_keywords = ['login', 'signin', 'verify', 'webscr', 'confirm', 'billing', 'admin', 'panel', 'credential', 'security', 'update']
     features.append(1 if any(keyword in url.lower() for keyword in phishing_keywords) else 0)
-
-    # 5. Presence of '@' symbol in the URL (often used to embed credentials or trick users)
+    # 5. Presence of '@'
     features.append(1 if '@' in url else 0)
-
-    # 6. Presence of IP address instead of domain name (e.g., http://192.168.1.1/login)
+    # 6. IP address in hostname
     ip_pattern = r'^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$'
     features.append(1 if parsed_url.hostname and re.match(ip_pattern, parsed_url.hostname) else 0)
-
-    # 7. Shortening service (e.g., bit.ly, tinyurl - often used by phishers)
-    shortening_services = ['bit.ly', 'tinyurl.com', 'goo.gl', 'ow.ly', 't.co', 'is.gd', 'cli.gs', 'buff.ly', 'rebrand.ly', 'cutt.ly']
+    # 7. Shortening service
+    shortening_services = ['bit.ly', 'tinyurl.com', 'goo.gl', 't.co']
     features.append(1 if any(service in parsed_url.netloc.lower() for service in shortening_services) else 0)
-
-    # 8. Number of hyphens in the domain (excessive hyphens can be a sign of generated domains)
+    # 8. Number of hyphens in domain
     features.append(ext.domain.count('-'))
-
-    # 9. Length of hostname (very short or very long can be suspicious)
+    # 9. Length of hostname
     features.append(len(parsed_url.hostname) if parsed_url.hostname else 0)
-
-    # 10. Number of subdomains (e.g., www.sub.domain.com -> 2 subdomains)
+    # 10. Number of subdomains
     features.append(len(ext.subdomain.split('.')) if ext.subdomain else 0)
-
-    # 11. Presence of query parameters (e.g., ?id=123, ?redirect=...)
+    # 11. Query parameters
     features.append(1 if parsed_url.query else 0)
-
-    # 12. Length of query string
+    # 12. Length of query
     features.append(len(parsed_url.query))
-
-    # 13. Presence of fragment (#section)
+    # 13. Presence of fragment
     features.append(1 if parsed_url.fragment else 0)
-
-    # 14. Port number in URL (uncommon for legitimate sites, e.g., :8080)
+    # 14. Port number
     features.append(1 if parsed_url.port else 0)
-
-    # 15. Suspicious TLDs (Top-Level Domains) - expanded list
-    suspicious_tlds = ['.zip', '.xyz', '.info', '.top', '.club', '.online', '.site', '.ru', '.cn', '.pw', '.ga', '.cf', '.tk', '.ml', '.gq', '.bid', '.loan', '.win', '.party', '.review', '.download', '.men', '.kim', '.science', '.date', '.link', '.click']
+    # 15. Suspicious TLDs
+    suspicious_tlds = ['.zip', '.xyz', '.info', '.top', '.club', '.online', '.site', '.ru', '.cn', '.pw', '.link', '.click']
     features.append(1 if ext.suffix and any(tld == '.' + ext.suffix.lower() for tld in suspicious_tlds) else 0)
-
-    # 16. Path depth (number of directories)
+    # 16. Path depth
     features.append(parsed_url.path.count('/'))
-
-    # 17. Presence of non-ASCII characters (punycode, often used in homograph attacks)
+    # 17. Non-ASCII chars
     features.append(1 if any(ord(c) > 127 for c in url) else 0)
-
-    # 18. "Brand" impersonation in subdomain or path (e.g., microsoft.com.malicious.xyz)
+    # 18. Brand impersonation
     common_brands = ['google', 'microsoft', 'apple', 'amazon', 'paypal', 'ebay', 'facebook', 'instagram', 'netflix', 'bank']
     brand_impersonation_score = 0
     if ext.domain and ext.domain.lower() not in common_brands:
@@ -338,50 +319,49 @@ def extract_highly_discriminative_features(url):
                 brand_impersonation_score = 1
                 break
     features.append(brand_impersonation_score)
-
-    # 19. Redirects in query parameters (e.g., ?redirect=http://malicious.com)
+    # 19. Redirects in query
     query_params = parse_qs(parsed_url.query)
-    redirect_keywords = ['redirect', 'url', 'return', 'next', 'continue', 'destination']
+    redirect_keywords = ['redirect', 'url', 'return', 'next']
     redirect_found = 0
     for key, values in query_params.items():
         if any(rk in key.lower() for rk in redirect_keywords):
             for value in values:
-                if 'http' in value.lower() or 'https' in value.lower():
+                if 'http' in value.lower():
                     redirect_found = 1
                     break
         if redirect_found:
             break
     features.append(redirect_found)
-
-    # 20. Is it a known legitimate domain? (STRONG SIGNAL)
-    features.append(1 if ext.top_domain_under_public_suffix and ext.top_domain_under_public_suffix.lower() in KNOWN_LEGITIMATE_DOMAINS_LIST else 0)
-
-    # 21. Has common legitimate path/query keywords (to counteract phishing keywords)
-    legitimate_path_keywords = ['order', 'history', 'account', 'profile', 'settings', 'dashboard', 'summary', 'cart', 'checkout', 'product', 'category', 'item', 'view', 'manage', 'details', 'status', 'help', 'support', 'contact', 'about', 'privacy', 'terms']
+    
+    # 20. Is known legit domain (ML feature)
+    tld_main_domain = ext.top_domain_under_public_suffix
+    features.append(1 if tld_main_domain and tld_main_domain.lower() in KNOWN_LEGITIMATE_DOMAINS_LIST else 0)
+    
+    # 21. Legitimate path keywords
+    legitimate_path_keywords = ['order', 'history', 'account', 'profile', 'settings', 'dashboard', 'cart', 'help', 'contact', 'about']
     features.append(1 if any(keyword in url.lower() for keyword in legitimate_path_keywords) else 0)
 
     return features
 
+# --- API Endpoints ---
 
 @app.post("/scan_url")
 async def scan_url(
     item: URLItem, 
     db: Session = Depends(get_db),
-    current_user: User | None = Depends(get_current_user) # <-- 1. ADD THIS
+    current_user: Union[User, None] = Depends(get_current_user)
 ):
     url = item.url.strip()
 
     if not url:
         raise HTTPException(status_code=400, detail="URL cannot be empty.")
-
     if not re.match(r'https?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+', url):
         return {"status": "error", "message": "Invalid URL format. Please include http:// or https://"}
 
-    # We need to get the user ID, or None if it's a guest
     user_id = current_user.id if current_user else None
 
     try:
-        # --- CACHING LOGIC ---
+        # --- CACHING LOGIC (FEATURE 2) ---
         cache_duration = timedelta(hours=6)
         cache_expiry_time = datetime.utcnow() - cache_duration
 
@@ -392,19 +372,14 @@ async def scan_url(
 
         if cached_scan:
             print(f"CACHE HIT: Returning saved result for {url}")
-            
-            # --- 2. START TIERED RETURN LOGIC ---
             if current_user is None:
-                # GUEST USER: Basic info only
-                return {
-                    "scan_id": cached_scan.id,
-                    "status": cached_scan.status
-                }
+                return {"scan_id": cached_scan.id, "status": cached_scan.status}
             else:
-                # REGISTERED USER: Full info
+                # Run in threadpool to avoid blocking
+                cached_domain_ext = await run_in_threadpool(tldextract.extract, url)
                 cached_features = {
                     'reason': 'Cached Result',
-                    'domain': tldextract.extract(url).top_domain_under_public_suffix,
+                    'domain': cached_domain_ext.top_domain_under_public_suffix,
                     'was_whitelisted': cached_scan.was_whitelisted
                 }
                 return {
@@ -417,30 +392,51 @@ async def scan_url(
         
         print(f"CACHE MISS: Performing new scan for {url}")
         
-        # --- (Rest of your scan logic is the same) ---
+        # --- SCAN LOGIC ---
         scan_status = ""
         scan_confidence = 0.0
         scan_whitelisted = False
         scan_features = {} 
 
-        ext = tldextract.extract(url)
-        if ext.top_domain_under_public_suffix and ext.top_domain_under_public_suffix.lower() in MASTER_WHITELIST_SET:
+        # --- RUN BLOCKING I/O IN THREADPOOL ---
+        ext = await run_in_threadpool(tldextract.extract, url)
+        # ---
+        
+        tld_main_domain = ext.top_domain_under_public_suffix
+
+        if tld_main_domain and tld_main_domain.lower() in MASTER_WHITELIST_SET:
             scan_status = "safe"
             scan_confidence = 0.999
             scan_whitelisted = True
             scan_features = {
                 'reason': 'Whitelisted Domain',
-                'domain': ext.top_domain_under_public_suffix,
+                'domain': tld_main_domain,
             }
         
         else:
             scan_whitelisted = False
+            
+            # --- RUN BLOCKING I/O IN THREADPOOL ---
+            # The ML model's `predict` is CPU-bound, so run_in_threadpool
+            # is the right way to avoid blocking the async loop.
+            
+            # 1. Get features (which is now async)
+            features_list = await extract_highly_discriminative_features(url)
+            
+            # 2. Transform (this is fast, no thread needed)
             url_tfidf = vectorizer.transform([url])
-            url_additional = pd.DataFrame([extract_highly_discriminative_features(url)])
+            url_additional = pd.DataFrame([features_list])
+            url_additional_csr = csr_matrix(url_additional.values)
             url_combined = hstack([url_tfidf, url_additional])
             
-            prediction = model_pipeline.predict(url_combined)[0]
-            prediction_proba = model_pipeline.predict_proba(url_combined)[0]
+            # 3. Predict (this is slow, run in thread)
+            def predict_in_thread():
+                prediction = model_pipeline.predict(url_combined)[0]
+                prediction_proba = model_pipeline.predict_proba(url_combined)[0]
+                return prediction, prediction_proba
+
+            prediction, prediction_proba = await run_in_threadpool(predict_in_thread)
+            # --- END OF THREADPOOL ---
 
             if prediction == 1:
                 scan_status = "dangerous"
@@ -452,21 +448,24 @@ async def scan_url(
             if 0.4 < scan_confidence < 0.6: 
                  scan_status = "suspicious"
 
+            # We can re-use features_list to build scan_features
+            # Need to re-parse the URL here as we don't have parsed_url from the async func
+            parsed_url = urlparse(url) 
             scan_features = {
-                'url_length': len(url),
-                'has_ip_address': 1 if re.search(r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}', urlparse(url).netloc) else 0,
-                'has_at_symbol': 1 if "@" in url else 0,
-                'num_dots': url.count('.'),
-                'num_hyphens': url.count('-'),
-                'uses_https': 1 if url.lower().startswith('https') else 0,
-                'domain': urlparse(url).netloc,
-                'path': urlparse(url).path,
-                'query': urlparse(url).query,
-                'has_phishing_keywords': extract_highly_discriminative_features(url)[3],
-                'is_shortened': extract_highly_discriminative_features(url)[6],
-                'num_subdomains': extract_highly_discriminative_features(url)[9],
-                'suspicious_tld': extract_highly_discriminative_features(url)[14],
-                'is_known_legit_domain_feature': extract_highly_discriminative_features(url)[19]
+                'url_length': features_list[0],
+                'has_ip_address': features_list[5],
+                'has_at_symbol': features_list[4],
+                'num_dots': features_list[1],
+                'num_hyphens': features_list[7],
+                'uses_https': features_list[2],
+                'domain': parsed_url.netloc,
+                'path': parsed_url.path,
+                'query': parsed_url.query,
+                'has_phishing_keywords': features_list[3],
+                'is_shortened': features_list[6],
+                'num_subdomains': features_list[9],
+                'suspicious_tld': features_list[14],
+                'is_known_legit_domain_feature': features_list[19]
             }
 
         # --- DATABASE LOGGING ---
@@ -476,21 +475,16 @@ async def scan_url(
             confidence=float(scan_confidence),
             was_whitelisted=scan_whitelisted,
             timestamp=datetime.utcnow(),
-            user_id=user_id  # <-- 3. ADD THE USER ID
+            user_id=user_id
         )
         db.add(new_scan)
         db.commit()
         db.refresh(new_scan)
 
-        # --- 4. FINAL TIERED RETURN ---
+        # --- TIERED RETURN ---
         if current_user is None:
-            # GUEST USER: Basic info only
-            return {
-                "scan_id": new_scan.id,
-                "status": scan_status
-            }
+            return {"scan_id": new_scan.id, "status": scan_status}
         else:
-            # REGISTERED USER: Full info
             return {
                 "scan_id": new_scan.id,
                 "status": scan_status,
@@ -503,20 +497,50 @@ async def scan_url(
         print(f"Error during URL scanning: {e}")
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Internal server error during scan: {e}")
+
+# --- USER AUTH ENDPOINTS ---
+
+@app.post("/register", response_model=UserResponse)
+async def register_user(user: UserCreate, db: Session = Depends(get_db)):
+    db_user = db.query(User).filter(User.email == user.email).first()
+    if db_user:
+        raise HTTPException(status_code=400, detail="Email already registered")
     
-# --- New ENDPOINT for feedback (featur 1) ---
+    pw_bytes = user.password.encode("utf-8")
+    if len(pw_bytes) > 72:
+        raise HTTPException(status_code=400, detail="Password too long (max. 72 bytes). Please use a shorter password.")
+    hashed_pass = hash_password(user.password)
+    new_api_key = create_api_key()
+    
+    new_user = User(
+        email=user.email,
+        hashed_password=hashed_pass,
+        api_key=new_api_key
+    )
+    db.add(new_user)
+    db.commit()
+    db.refresh(new_user)
+    
+    return {"email": new_user.email, "api_key": new_user.api_key}
+
+@app.post("/login", response_model=UserResponse)
+async def login_user(form_data: UserLogin, db: Session = Depends(get_db)):
+    db_user = db.query(User).filter(User.email == form_data.email).first()
+    
+    if not db_user or not verify_password(form_data.password, db_user.hashed_password):
+        raise HTTPException(
+            status_code=401,
+            detail="Incorrect email or password"
+        )
+    
+    return {"email": db_user.email, "api_key": db_user.api_key}
+
 @app.post("/report_feedback")
 async def report_feedback(
     item: FeedbackItem, 
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user) # <-- 1. REMOVED | None
+    current_user: Union[User, None] = Depends(get_current_user)
 ):
-    """
-    Endpoint for users to report an incorrect prediction.
-    REQUIRES a valid API Key.
-    """
-    
-    # 2. If no user, dependency will raise 401, so we know user is not None
     if current_user is None:
          raise HTTPException(status_code=401, detail="You must be logged in to report feedback.")
 
@@ -536,7 +560,7 @@ async def report_feedback(
         scan_id=item.scan_id,
         report_type=item.report_type,
         timestamp=datetime.utcnow(),
-        user_id=current_user.id  # <-- 3. ADD THE USER ID
+        user_id=current_user.id
     )
     db.add(new_feedback)
     db.commit()
@@ -549,47 +573,7 @@ async def report_feedback(
         "reported_as": item.report_type
     }
 
-# Root endpoint for basic check
+# --- ROOT ENDPOINT ---
 @app.get("/")
 async def read_root():
-    return {"message": "URL Scanner Backend is running!"}
-
-# --- NEW: USER REGISTRATION ENDPOINT ---
-@app.post("/register", response_model=UserResponse)
-async def register_user(user: UserCreate, db: Session = Depends(get_db)):
-    # Check if user already exists
-    db_user = db.query(User).filter(User.email == user.email).first()
-    if db_user:
-        raise HTTPException(status_code=400, detail="Email already registered")
-    
-    # Hash password and create API Key
-    hashed_pass = hash_password(user.password)
-    new_api_key = create_api_key()
-
-    # Create new user
-    new_user = User(
-        email=user.email,
-        hashed_password=hashed_pass,
-        api_key=new_api_key 
-    )
-    db.add(new_user)
-    db.commit()
-    db.refresh(new_user)
-
-    return {"email": new_user.email, "api_key": new_user.api_key}
-
-# --- NEW: USER LOGIN ENDPOINT ---
-@app.post("/login", response_model=UserResponse)
-async def login_user(form_data: UserLogin, db: Session = Depends(get_db)):
-    # Find user by email
-    db_user = db.query(User).filter(User.email == form_data.email).first()
-
-    # Check if user exists and password is correct
-    if not db_user or not verify_password(form_data.password, db_user.hashed_password):
-        raise HTTPException(
-            status_code=401,
-            detail="Incorrect email or password"
-        )
-    
-    # Return their existing details
-    return {"email": db_user.email, "api_key": db_user.api_key}
+    return {"message": "PhishEye Scanner Backend is running!"}

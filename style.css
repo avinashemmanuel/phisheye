@@ -1,19 +1,21 @@
-/* style.css */
+/* ---
+PhishEye Minimalist Theme
+--- */
 
-/* --- 1. Root Variables and Body --- */
+/* --- 1. Root Variables & Body --- */
 :root {
-    --primary-color: #0a68ff;
+    --primary-color: #0a68ff; /* A clean, modern blue */
     --primary-hover: #0058e0;
     --safe-color: #1aae5a;
     --suspicious-color: #ffb00a;
     --dangerous-color: #e5383b;
-
-    --bg-color: #f8f9fa;
+    
+    --bg-color: #f8f9fa;      /* Very light gray background */
     --card-bg-color: #ffffff;
-    --text-color: #212529;
-    --text-muted: #6c757d;
+    --text-color: #212529;    /* Dark gray for text */
+    --text-muted: #6c757d;    /* Lighter gray for muted text */
     --border-color: #dee2e6;
-
+    
     --border-radius: 10px;
     --shadow: 0 4px 20px rgba(0, 0, 0, 0.06);
 }
@@ -31,7 +33,7 @@ body {
     display: none !important;
 }
 
-/* --- 2. Header and Navigation --- */
+/* --- 2. Header & Navigation --- */
 .header {
     display: flex;
     justify-content: space-between;
@@ -58,7 +60,7 @@ body {
     cursor: pointer;
     font-weight: 500;
     font-size: 0.9rem;
-    transition: background-color 0.2 ease;
+    transition: background-color 0.2s ease;
 }
 
 .auth-button:hover {
@@ -74,17 +76,16 @@ body {
 #logoutButton {
     background-color: var(--dangerous-color);
 }
-
 #logoutButton:hover {
     background-color: #c42d30;
 }
 
-/* --- 3. Main Container --- */
+/* --- 3. Main Container & Sections --- */
 .container {
     max-width: 750px;
     margin: 2rem auto;
     padding: 2.5rem;
-    background-color: var(--card-bg-color);
+    background-color: var(--card-bg-color); /* Removed typo */
     border-radius: var(--border-radius);
     box-shadow: var(--shadow);
 }
@@ -92,7 +93,7 @@ body {
 .about-section,
 .history-section {
     margin-top: 2.5rem;
-    padding-top: 2.5rem;
+    padding-top: 1.5rem;
     border-top: 1px solid var(--border-color);
 }
 
@@ -153,7 +154,7 @@ h2 {
     padding: 0.75rem;
     border: none;
     border-bottom: 3px solid transparent;
-    border-color: transparent;
+    background-color: transparent;
     cursor: pointer;
     font-size: 1rem;
     color: var(--text-muted);
@@ -161,7 +162,7 @@ h2 {
     transition: all 0.2s ease;
 }
 
-.auth-tab-button.active {
+.auth-tab-button.active { /* Fixed class from HTML */
     color: var(--primary-color);
     border-bottom-color: var(--primary-color);
 }
@@ -179,7 +180,6 @@ h2 {
     font-size: 1rem;
     background-color: var(--bg-color);
 }
-
 #loginForm input:focus, #registerForm input:focus {
     outline: none;
     border-color: var(--primary-color);
@@ -197,7 +197,6 @@ h2 {
     font-weight: 600;
     transition: background-color 0.2s ease;
 }
-
 #loginForm button:hover, #registerForm button:hover {
     background-color: var(--primary-hover);
 }
@@ -223,7 +222,6 @@ h2 {
     border-radius: var(--border-radius) 0 0 var(--border-radius);
     transition: all 0.2s ease;
 }
-
 #urlInput:focus {
     outline: none;
     border-color: var(--primary-color);
@@ -240,7 +238,7 @@ h2 {
     border-radius: 0 var(--border-radius) var(--border-radius) 0;
     cursor: pointer;
     font-weight: 500;
-    margin-left: -1px;
+    margin-left: -1px; /* Overlap border */
     transition: background-color 0.2s ease;
 }
 
@@ -254,7 +252,6 @@ h2 {
     padding: 20px;
     color: var(--text-muted);
 }
-
 #loadingSpinner p {
     margin-top: 10px;
     font-weight: 500;
@@ -268,6 +265,10 @@ h2 {
     height: 40px;
     animation: spin 1s linear infinite;
     margin: 0 auto;
+}
+
+.spinner-hidden {
+    display: none !important;
 }
 
 @keyframes spin {
@@ -291,20 +292,18 @@ h2 {
     border-color: var(--safe-color);
     color: #0f5128;
 }
-
 .result-box.suspicious {
     background-color: #fff8e1;
     border-color: var(--suspicious-color);
     color: #664b04;
 }
-
 .result-box.dangerous {
     background-color: #fdeded;
     border-color: var(--dangerous-color);
     color: #581517;
 }
 
-/* --- 8. Tiered and Feedback Content --- */
+/* --- 8. Tiered & Feedback Content --- */
 #confidenceText {
     font-size: 1rem;
     font-weight: 400;
@@ -313,37 +312,33 @@ h2 {
     margin-bottom: 10px;
 }
 
-.guest-message {
+.guest-message { /* Fixed class */
     font-size: 0.9rem;
     font-weight: 400;
     color: var(--text-muted);
     margin-top: 15px;
 }
-
 .guest-message a {
     color: var(--primary-color);
     text-decoration: none;
     cursor: pointer;
     font-weight: 500;
 }
-
 .guest-message a:hover {
     text-decoration: underline;
 }
 
-.feedback-container {
+.feedback-container { /* Fixed class */
     margin-top: 20px;
     padding-top: 15px;
-    border-top: 1px solid rgba(0, 0, 0, 0.05);
+    border-top: 1px solid rgba(0,0,0,0.05);
 }
-
 .feedback-container p {
     font-size: 0.9rem;
     font-weight: 500;
     color: var(--text-muted);
     margin-bottom: 10px;
 }
-
 .feedback-button {
     background-color: var(--suspicious-color);
     border: none;
@@ -355,23 +350,22 @@ h2 {
     font-size: 0.9rem;
     transition: all 0.2s ease;
 }
-
 .feedback-button:hover {
     background-color: #e0a800;
     transform: translateY(-1px);
 }
-
 #feedbackThanks {
     font-size: 0.9rem;
     color: var(--safe-color);
     font-weight: 500;
 }
 
+
 /* --- 9. Detailed Results --- */
 #detailedResults {
     margin-top: 20px;
     text-align: left;
-    border-top: 1px solid rgba(0, 0, 0, 0.05);
+    border-top: 1px solid rgba(0,0,0,0.05);
     padding-top: 15px;
 }
 
@@ -388,14 +382,12 @@ h2 {
     list-style-type: none;
     font-size: 0.9rem;
 }
-
 #detailsList dt {
     font-weight: 600;
     color: var(--text-muted);
     margin-top: 8px;
     text-transform: capitalize;
 }
-
 #detailsList dd {
     margin-left: 0;
     color: var(--text-color);
@@ -408,7 +400,6 @@ h2 {
     padding: 0;
     margin: 0;
 }
-
 #historyList li {
     display: flex;
     justify-content: space-between;
@@ -416,26 +407,22 @@ h2 {
     padding: 1rem 0;
     border-bottom: 1px solid var(--border-color);
 }
-
 #historyList li:last-child {
     border-bottom: none;
 }
-
 .history-url {
     word-break: break-all;
     margin-right: 1.5rem;
     color: var(--text-muted);
     font-size: 0.9rem;
 }
-
 .history-status {
-    font-size: 600;
+    font-weight: 600; /* Fixed typo */
     white-space: nowrap;
     font-size: 0.9rem;
     padding: 0.2rem 0.6rem;
     border-radius: 5px;
 }
-
 .history-status.safe { background-color: #e8f7ef; color: #0f5128; }
 .history-status.suspicious { background-color: #fff8e1; color: #664b04; }
 .history-status.dangerous { background-color: #fdeded; color: #581517; }
@@ -452,7 +439,6 @@ h2 {
     font-size: 0.9rem;
     transition: background-color 0.2s ease;
 }
-
 .clear-button:hover {
     background-color: #c42d30;
 }

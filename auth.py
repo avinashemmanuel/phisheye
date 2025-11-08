@@ -5,11 +5,12 @@ from fastapi.security import APIKeyHeader
 from sqlalchemy.orm import Session
 from passlib.context import CryptContext
 import secrets
+from typing import Union
 
 from database import get_db, User # Import from database.py
 
 # --- Password Hashing Setup ---
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+pwd_context = CryptContext(schemes=["argon2", "bcrypt_sha256"], deprecated="auto")
 
 def hash_password(password: str) -> str:
     """Hashes a plain text password"""
@@ -26,9 +27,9 @@ def create_api_key() -> str:
 
 # --- FastAPI Dependency ---
 async def get_current_user(
-        api_key: str | None = Header(default=None, alias="Authorization"),
+        api_key: Union[str, None] = Header(default=None, alias="Authorization"),
         db: Session = Depends(get_db)
-) -> User | None:
+) -> Union[User, None]:
     """FastAPI dependency to get the current user from an API Key.
     If no key is provided, return None (a guest user).
     If a key is provided but is invalid, raises a 401 error"""

@@ -1,4 +1,4 @@
-document .addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', () => {
     // --- STATE ---
     let scanHistory = [];
     const MAX_HISTORY_ITEMS = 10;
@@ -6,7 +6,7 @@ document .addEventListener('DOMContentLoaded', () => {
     let currentScanId = null; // Stores the ID of the last scan for feedback
 
     // --- API ---
-    const API_BASE_URL = 'http://127.0.0.1:8000'; // FastAPI backend
+    const API_BASE_URL = 'http://127.0.0.1:8000'; // Your FastAPI backend
 
     // --- DOM ELEMENTS ---
     // Auth UI
@@ -14,12 +14,12 @@ document .addEventListener('DOMContentLoaded', () => {
     const showAuthButton = document.getElementById('showAuthButton');
     const userInfo = document.getElementById('userInfo');
     const logoutButton = document.getElementById('logoutButton');
-
+    
     // Auth Modal
     const authContainer = document.getElementById('authContainer');
     const closeAuthButton = document.getElementById('closeAuthButton');
     const showLoginTab = document.getElementById('showLoginTab');
-    const showRegisterTab = document.getElementById('showResgisterTab');
+    const showRegisterTab = document.getElementById('showRegisterTab');
     const loginForm = document.getElementById('loginForm');
     const registerForm = document.getElementById('registerForm');
     const authMessage = document.getElementById('authMessage');
@@ -33,7 +33,7 @@ document .addEventListener('DOMContentLoaded', () => {
     // Scanner UI
     const urlInput = document.getElementById('urlInput');
     const scanButton = document.getElementById('scanButton');
-    const resultBox = document.getElementById('resultBox');
+    const resultBox = document.getElementById('result'); 
     const loadingSpinner = document.getElementById('loadingSpinner');
     const resultStatusText = document.getElementById('resultStatusText');
     const confidenceText = document.getElementById('confidenceText');
@@ -48,39 +48,32 @@ document .addEventListener('DOMContentLoaded', () => {
     const reportIncorrectButton = document.getElementById('reportIncorrectButton');
     const feedbackThanks = document.getElementById('feedbackThanks');
 
-    // History UI 
+    // History UI
     const scanHistorySection = document.getElementById('scanHistory');
     const historyList = document.getElementById('historyList');
     const clearHistoryButton = document.getElementById('clearHistoryButton');
 
+
     // --- AUTHENTICATION FUNCTIONS ---
 
-    // Checks localStorage for API key and e-mail, then updates the UI
     function checkLoginState() {
         currentApiKey = localStorage.getItem('phishEyeApiKey');
         const userEmail = localStorage.getItem('phishEyeUserEmail');
 
         if (currentApiKey && userEmail) {
-            // User is logged in
-            userInfo.textContent = 'Welcome, ${user_email}';
+            userInfo.textContent = `Welcome, ${userEmail}`;
             userInfo.classList.remove('hidden');
             logoutButton.classList.remove('hidden');
             showAuthButton.classList.add('hidden');
         } else {
-            // User is a guest
             userInfo.textContent = '';
             userInfo.classList.add('hidden');
             logoutButton.classList.add('hidden');
             showAuthButton.classList.remove('hidden');
         }
-        authContainer.classList.add('hidden'); // Ensure modal is hidden on load
+        authContainer.classList.add('hidden');
     }
 
-
-    /**
-     * Shows the authentication modal.
-     * @param {'login' | 'register'} showTab - Which tab to open by default
-     */
     function showAuthModal(showTab = 'login') {
         authContainer.classList.remove('hidden');
         if (showTab === 'login') {
@@ -92,25 +85,18 @@ document .addEventListener('DOMContentLoaded', () => {
     }
 
     function hideAuthModal() {
-        authContainer.classList.add('remove');
+        authContainer.classList.add('hidden');
     }
 
-
-    /**
-     * Saves user details to localStorage and updates UI after login/register.
-     * @param {string} email - User's email
-     * @param {string} apiKey - User's new API key
-     */
     function handleAuthSuccess(email, apiKey) {
         localStorage.setItem('phishEyeApiKey', apiKey);
         localStorage.setItem('phishEyeUserEmail', email);
         currentApiKey = apiKey;
         checkLoginState();
         hideAuthModal();
-        clearResult(); // Clear previous scan result
+        clearResult();
     }
 
-    // Clears user's details from localStorage and updates UI
     function handleLogout() {
         localStorage.removeItem('phishEyeApiKey');
         localStorage.removeItem('phishEyeUserEmail');
@@ -119,15 +105,10 @@ document .addEventListener('DOMContentLoaded', () => {
         clearResult();
     }
 
-    /**
-     * Handles the submit event for both Login and register form
-     * @param {Event} e - The form submit event
-     * @param {'/login' | '/register'} endpoint - The API endpoint to call
-     */
     async function handleAuthFormSubmit(e, endpoint) {
         e.preventDefault();
         authMessage.textContent = '';
-
+        
         const isRegister = endpoint === '/register';
         const email = isRegister ? registerEmail.value : loginEmail.value;
         const password = isRegister ? registerPassword.value : loginPassword.value;
@@ -138,7 +119,7 @@ document .addEventListener('DOMContentLoaded', () => {
         }
 
         try {
-            const response = await fetch('${API_BASE_URL}${endpoint}', {
+            const response = await fetch(`${API_BASE_URL}${endpoint}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ email, password })
@@ -147,46 +128,42 @@ document .addEventListener('DOMContentLoaded', () => {
             const data = await response.json();
 
             if (!response.ok) {
-                authMessage.textContent = data.detail || 'An unknown error occured.';
+                authMessage.textContent = data.detail || 'An unknown error occurred.';
             } else {
                 handleAuthSuccess(data.email, data.api_key);
             }
         } catch (error) {
-            console.error('Auth Error: ${error}');
+            console.error(`Auth Error: ${error}`);
             authMessage.textContent = 'Failed to connect to the server.';
         }
     }
 
 
-    // --- SCANNER & RESULT FUNCITON ---
+    // --- SCANNER & RESULT FUNCTIONS ---
 
-    // Resets the result box to its default state.
     function clearResult() {
         resultBox.className = 'result-box';
         resultStatusText.textContent = "Enter a URL and click 'Scan' to check its safety!";
+        
+        // Use the standard .hidden class
         confidenceText.classList.add('hidden');
         guestMessage.classList.add('hidden');
-        detailedResultsDiv.classList.add('detailed-results-hidden');
-        detailsList.innerHTML ='';
+        detailedResultsDiv.classList.add('hidden');
+        detailsList.innerHTML = '';
         feedbackContainer.classList.add('hidden');
         feedbackThanks.classList.add('hidden');
         currentScanId = null;
     }
 
-    
-    /**
-     * Updates the UI with the scan results. Handles tiered display.
-     * @param {object} data - The response data from /scan_url
-     */
     function updateResult(data) {
-        loadingSpinner.classList.add('spinner-hidden');
-        resultBox.className = 'result-box'; // Reset
-
-        currentScanId = data.scan_id; // Always store the scan_id
+        loadingSpinner.classList.add('spinner-hidden'); // This is the one special class
+        resultBox.className = 'result-box';
+        
+        currentScanId = data.scan_id;
 
         if (data.status === 'safe') {
             resultBox.classList.add('safe');
-            resultStatusText.textContent = 'This URL appears to be SAFE.'
+            resultStatusText.textContent = 'This URL appears to be SAFE.';
         } else if (data.status === 'suspicious') {
             resultBox.classList.add('suspicious');
             resultStatusText.textContent = 'This URL is SUSPICIOUS. Exercise caution.';
@@ -197,33 +174,28 @@ document .addEventListener('DOMContentLoaded', () => {
 
         // --- TIERED CONTENT ---
         if (data.confidence !== undefined) {
-            // This is a registered user (full response)
-            confidenceText.textContent = '(Confidence: ${(data.confidence * 100).toFixed(2)}%)';
+            // REGISTERED USER
+            confidenceText.textContent = `(Confidence: ${(data.confidence * 100).toFixed(2)}%)`;
             confidenceText.classList.remove('hidden');
             guestMessage.classList.add('hidden');
             renderDetailedFeatures(data.detailed_features);
             feedbackContainer.classList.remove('hidden');
-            feedbackThanks.classList.add('hidden'); // Reset thanks message
-
-            // Add to history (only for registered users)
+            feedbackThanks.classList.add('hidden');
+            
             addHistoryItem(urlInput.value.trim(), data.status, data.confidence);
         } else {
-            // This is a GUEST (limited response)
+            // GUEST
             confidenceText.classList.add('hidden');
-            guestMessage.classList.remove('hidden'); // Show "Login for details"
-            detailedResultsDiv.classList.add('detailed-results-hidden');
+            guestMessage.classList.remove('hidden');
+            detailedResultsDiv.classList.add('hidden');
             feedbackContainer.classList.add('hidden');
         }
     }
 
-
-    /**
-     * Renders the key-value pairs of detailed features
-     */
     function renderDetailedFeatures(details) {
         detailsList.innerHTML = '';
         if (details && Object.keys(details).length > 0) {
-            detailedResultsDiv.classList.remove('detailed-results-hidden');
+            detailedResultsDiv.classList.remove('hidden'); // Use .hidden
             for (const key in details) {
                 if (details.hasOwnProperty(key)) {
                     const dt = document.createElement('dt');
@@ -232,52 +204,50 @@ document .addEventListener('DOMContentLoaded', () => {
 
                     const dd = document.createElement('dd');
                     dd.textContent = details[key];
-                    detailsList.appendChild(dd)
+                    detailsList.appendChild(dd);
                 }
             }
         } else {
-            detailedResultsDiv.classList.add('detailed-results-hidden');
+            detailedResultsDiv.classList.add('hidden'); // Use .hidden
         }
     }
 
-
-    /**
-     * Formats feature names for display
-     */
     function formatFeatureName(name) {
         return name
             .replace(/_/g, ' ')
             .replace(/\b\w/g, char => char.toUpperCase());
     }
 
-
-    /**
-     * Handles the main scan button click
-     */
     async function handleScan() {
         const url = urlInput.value.trim();
 
-        // Client-side validation
+        // Simplified, more reliable client-side validation
         if (!url) {
             alert('Please enter a URL.');
-        }
-        const urlRegex = /^(https?:\/\/(?:www\.|(?!www))[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s]{2,}|www\.[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s]{2,}|https?:\/\/[a-zA-Z0-9]+\.[^\s]{2,}|[a-zA-Z0-9]+\.[^\s]{2,})$/i;
-        if (!urlRegex.test(url)) {
-            alert('Please enter a valid URL (e.g., https://example.com).');
             return;
         }
+        if (!url.startsWith('http://') && !url.startsWith('https://')) {
+             // A basic check. The backend will do the real validation.
+             if (!url.includes('.')) { 
+                alert('Please enter a valid URL.');
+                return;
+             }
+             // Let's just ask them to add it.
+             alert('Please include http:// or https:// in your URL.');
+             return;
+        }
 
-        clearResult(); // Clear previous results
+        clearResult();
         loadingSpinner.classList.remove('spinner-hidden');
         resultStatusText.textContent = 'Scanning...';
 
         try {
             const headers = { 'Content-Type': 'application/json' };
             if (currentApiKey) {
-                headers['Authorization'] = currentApiKey; // Add API Key if logged in
+                headers['Authorization'] = currentApiKey;
             }
 
-            const response = await fetch('${API_BASE_URL}/scan_url', {
+            const response = await fetch(`${API_BASE_URL}/scan_url`, {
                 method: 'POST',
                 headers: headers,
                 body: JSON.stringify({ url: url }),
@@ -286,25 +256,19 @@ document .addEventListener('DOMContentLoaded', () => {
             const data = await response.json();
 
             if (!response.ok) {
-                // This catches 4xx and 5xx errors from the backend
-                throw new Error(data.detail || 'An error occured during scanning.');
+                throw new Error(data.detail || 'An error occurred during scanning.');
             }
-
-            // Handle successful scan (guest or user)
+            
             updateResult(data);
+
         } catch (error) {
             console.error('Scan Error:', error);
             loadingSpinner.classList.add('spinner-hidden');
             resultBox.className = 'result-box dangerous';
-            resultStatusText.textContent = 'Scan Error: ${error.message}';
+            resultStatusText.textContent = `Scan Error: ${error.message}`;
         }
     }
 
-
-    /**
-     * Sends feedback for an incorrect scan
-     * @param {'false_positive' | 'false_negative'} reportType
-     */
     async function sendFeedback(reportType) {
         if (!currentApiKey || !currentScanId) {
             alert('You must be logged in to report feedback.');
@@ -312,7 +276,7 @@ document .addEventListener('DOMContentLoaded', () => {
         }
 
         try {
-            const response = await fetch('${API_BASE_URL}/report_feedback', {
+            const response = await fetch(`${API_BASE_URL}/report_feedback`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -323,29 +287,30 @@ document .addEventListener('DOMContentLoaded', () => {
                     report_type: reportType
                 })
             });
+            
             const data = await response.json();
 
             if (!response.ok) {
                 throw new Error(data.detail || 'Could not send feedback.');
             }
 
-            // Show "Thanks" message and hide button
             feedbackThanks.classList.remove('hidden');
-            reportIncorrectButton.classList.add('hidden'); // Hide to prevent double submit
-
-            // Re-show button after a delay
+            reportIncorrectButton.classList.add('hidden');
+            
             setTimeout(() => {
                 feedbackThanks.classList.add('hidden');
                 reportIncorrectButton.classList.remove('hidden');
             }, 3000);
+
         } catch (error) {
             console.error('Feedback Error:', error);
-            alert('Error: ${error.message}');
+            alert(`Error: ${error.message}`);
         }
     }
 
 
     // --- HISTORY FUNCTIONS ---
+
     function loadHistory() {
         const storedHistory = localStorage.getItem('urlScanHistory');
         if (storedHistory) {
@@ -370,11 +335,11 @@ document .addEventListener('DOMContentLoaded', () => {
 
     function renderHistory() {
         historyList.innerHTML = '';
-        if (scanHistory.length === 0) {
-            scanHistorySection.classList.add('history-hidden');
+        if (scanHistory.length === 0 || !currentApiKey) { // Don't show for guests
+            scanHistorySection.classList.add('hidden'); // Use .hidden
             return;
         }
-        scanHistorySection.classList.remove('history-hidden');
+        scanHistorySection.classList.remove('hidden'); // Use .hidden
         scanHistory.forEach(item => {
             const listItem = document.createElement('li');
             const urlSpan = document.createElement('span');
@@ -392,14 +357,12 @@ document .addEventListener('DOMContentLoaded', () => {
 
     // --- EVENT LISTENERS ---
 
-    // Auth Modal
     showAuthButton.addEventListener('click', () => showAuthModal('login'));
     closeAuthButton.addEventListener('click', hideAuthModal);
     loginForDetails.addEventListener('click', (e) => { e.preventDefault(); showAuthModal('login'); });
     registerForDetails.addEventListener('click', (e) => { e.preventDefault(); showAuthModal('register'); });
     logoutButton.addEventListener('click', handleLogout);
 
-    // Auth Tabs
     showLoginTab.addEventListener('click', () => {
         loginForm.classList.remove('hidden');
         registerForm.classList.add('hidden');
@@ -415,23 +378,16 @@ document .addEventListener('DOMContentLoaded', () => {
         authMessage.textContent = '';
     });
 
-    // Auth Forms
     loginForm.addEventListener('submit', (e) => handleAuthFormSubmit(e, '/login'));
     registerForm.addEventListener('submit', (e) => handleAuthFormSubmit(e, '/register'));
 
-    // Scanner
     scanButton.addEventListener('click', handleScan);
     urlInput.addEventListener('keypress', (event) => {
         if (event.key === 'Enter') scanButton.click();
     });
 
+    reportIncorrectButton.addEventListener('click', () => sendFeedback('false_negative')); 
 
-    // Feedback
-    // Assuming "incorrect" means a "false negative" (it was dangerous)
-    // or "false positive" (it was safe). Default to false_negative
-    reportIncorrectButton.addEventListener('click', () => sendFeedback('false_negative'));
-
-    // History
     clearHistoryButton.addEventListener('click', () => {
         if (confirm('Are you sure you want to clear all scan history?')) {
             scanHistory = [];
@@ -439,8 +395,8 @@ document .addEventListener('DOMContentLoaded', () => {
         }
     });
 
-
     // --- INITIALIZATION ---
-    loadHistory(); // Load history from localStorage
-    checkLoginState(); // Check if user is already logged in
-})
+    loadHistory();
+    checkLoginState();
+    clearResult(); // Ensure a clean state on load
+});

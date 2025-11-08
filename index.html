@@ -7,21 +7,22 @@
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
+
+    <!-- ======== HEADER ======== -->
     <header class="header">
         <h1>PhishEye</h1>
         <nav id="authNav">
-            <!-- This part will be controlled by JS -->
             <button id="showAuthButton" class="auth-button">Login / Register</button>
             <span id="userInfo" class="hidden"></span>
             <button id="logoutButton" class="auth-button hidden">Logout</button>
         </nav>
     </header>
 
-    <!-- === NEW AUTH CONTAINER (HIDDEN) === -->
+    <!-- ======== AUTH CONTAINER (HIDDEN) ======== -->
     <div id="authContainer" class="auth-container hidden">
         <div class="auth-box">
             <div class="auth-tabs">
-                <button id="showLoginTab" class="auth-tab-button-active" data-form="loginForm">Login</button>
+                <button id="showLoginTab" class="auth-tab-button active" data-form="loginForm">Login</button>
                 <button id="showRegisterTab" class="auth-tab-button" data-form="registerForm">Register</button>
             </div>
 
@@ -46,59 +47,65 @@
         </div>
     </div>
 
-    <!-- === CONTAINER === -->
+    <!-- ======== MAIN CONTAINER ======== -->
     <div class="container">
         <div class="input-group">
             <input type="text" id="urlInput" placeholder="Enter URL to scan..." required>
             <button id="scanButton">Scan URL</button>
         </div>
 
-        <div id="loadingSpinner" class="spinner-hidden">
+        <div id="loadingSpinner" class="spinner-hidden"> <!-- This one is special, leave as-is -->
             <div class="spinner"></div>
             <p>Scanning URL...</p>
         </div>
 
-        <div id="result" class="result-box">
-            <p id="resultStatusText">Enter a URL to click 'Scan' to check it's safety!</p>
+        <div id="result" class="result-box"> 
+            <p id="resultStatusText">Enter a URL and click 'Scan' to check its safety!</p>
             
-            <!-- NEW: Tiered Content -->
             <p id="confidenceText" class="hidden"></p>
-            <p id="guestMessage" class="guest-message-hidden">
-                <a href="#" id="loginForDetails">Login</a> or <a href="#" id="registerForDetails">Register</a> to see detailed results and report errors!
+            
+            <!-- Use class="... hidden" -->
+            <p id="guestMessage" class="guest-message hidden">
+                <a href="#" id="loginForDetails">Login</a> or <a href="#" id="registerForDetails">Register</a> to see detailed results and report errors.
             </p>
 
-            <div id="detailedResults" class="detailed-results-hidden">
+            <!-- Use class="... hidden" -->
+            <div id="detailedResults" class="hidden"> 
                 <h3>Scan Details:</h3>
                 <dl id="detailsList">
                     <!-- Details will be inserted here -->
                 </dl>
             </div>
-
-            <!-- NEW: Feedback Section (Hidden)-->
-            <div id="feedbackContainer" class="feedback-container-hidden">
+            
+            <!-- Use class="... hidden" -->
+            <div id="feedbackContainer" class="feedback-container hidden">
                 <p>Was this result correct?</p>
                 <button id="reportIncorrectButton" class="feedback-button report-incorrect">Report Incorrect</button>
                 <p id="feedbackThanks" class="hidden">Thanks for your feedback!</p>
-            </div>
+            </div> 
         </div>
-
-        <div id="scanHistory" class="history-section history-hidden">
+        
+        <!-- Use class="... hidden" -->
+        <div id="scanHistory" class="history-section hidden"> 
             <h2>Scan History</h2>
             <ul id="historyList">
-                <!-- History items will be loaded here -->
+                <!--History items will be loaded here-->
             </ul>
             <button id="clearHistoryButton" class="clear-button">Clear History</button>
         </div>
 
         <div id="aboutSection" class="about-section">
             <h2>About PhishEye</h2>
-            <p>
-                PhishEye is a URL scanning tool designed to help you identify potentially malicious or phishing websites. 
-                It uses a Machine Learning model to analyze various features of a URL and predict whether it's safe, suspicious, or dangerous.
-                Our goal is to provide a quick and easy way to check URLs before you click, helping to protect you from online threats.
-                Always exercise caution when browsing the internet, even with tools like PhishEye.
+            <p>PhishEye is a URL scanning tool designed to help you identify potentially malicious or 
+                phishing websites. It uses a Machine Learning model to analyze various features of a 
+                URL and predict whether it's safe, suspicious, or dangerous. 
             </p>
+            <p>Our goal is to provide a quick and easy way to check URLs before you click, 
+                helping to protect you from online threats.
+            </p>
+            <p>Always exercise caution when browsing the internet, even with tools like PhishEye.</p>
         </div>
+
     </div>
 
     <script src="script.js"></script>
