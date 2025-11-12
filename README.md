@@ -26,39 +26,39 @@ Built using **FastAPI**, **JavaScript**, and **TailwindCSS**, it aims to make br
 ## ⚙️ Setup Instructions
 
 ### 1️⃣ Clone the Repository
-bash
-git clone https://github.com/avinashemmanuel/phisheye.git
-cd phisheye
+bash<br>
+git clone https://github.com/avinashemmanuel/phisheye.git<br>
+cd phisheye<br>
 
 ### 2️⃣ Create a Virtual Environment
-bash
-python -m venv venv
-source venv/bin/activate  # Windows: venv\Scripts\activate
+bash<br>
+python -m venv venv<br>
+source venv/bin/activate  # Windows: venv\Scripts\activate<br>
 
 ### 3️⃣ Install Dependencies
-bash
-pip install -r requirements.txt
+bash<br>
+pip install -r requirements.txt<br>
 
 ### 4️⃣ Run the App
-bash
-uvicorn main:app --reload
+bash<br>
+uvicorn main:app --reload<br>
 
-Open http://localhost:8000 to use the app.
+Open http://localhost:8000 to use the app.<br>
 
 | Method | Endpoint   | Description                     |
 | ------ | ---------- | ------------------------------- |
 | POST   | `/scan`    | Analyze a URL                   |
 | GET    | `/history` | Retrieve scan history           |
 | POST   | `/report`  | Report incorrect classification |
-
+<br>
 
 ### 📊 Example Response
-JSON:
-{
-  "url": "http://example-login-update.com",
-  "classification": "Phishing",
-  "confidence": 0.95
-}
+JSON:<br>
+{<br>
+  "url": "http://example-login-update.com",<br>
+  "classification": "Phishing",<br>
+  "confidence": 0.95<br>
+}<br>
 
 
 ### 🤝 Contributing
@@ -70,6 +70,6 @@ This project is licensed under the MIT License – see the LICENSE file for deta
 
 
 ### 👨‍💻 Author
-Avinash Ben Emmanuel
-Department of Computer Science, Doon University
-📧 24ce24@doonuniversity.ac.in
+Avinash Ben Emmanuel<br>
+Department of Computer Science, Doon University<br>
+📧 24ce24@doonuniversity.ac.in<br>
