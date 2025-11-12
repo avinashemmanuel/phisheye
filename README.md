@@ -13,7 +13,6 @@ Built using **FastAPI**, **JavaScript**, and **TailwindCSS**, it aims to make br
 - Machine Learning–based classification
 - Web interface + REST API
 - Database logging for learning and analytics
-- Admin panel for managing whitelist and reports
 
 ---
 
