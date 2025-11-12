@@ -1,26 +1,124 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>PhishEye Scan</title>
-    <link rel="stylesheet" href="popup.css">
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>PhishEye — URL Scanner</title>
+
+  <!--
+    Defensive early script: set document width before layout/render.
+    This helps override any container/host quirks that cause a very narrow popup.
+  -->
+  <script>
+    try {
+      const forcedWidth = 360; // px - adjust if you want a different fixed width
+      document.documentElement.style.width = forcedWidth + 'px';
+      document.documentElement.style.minWidth = forcedWidth + 'px';
+      document.documentElement.style.boxSizing = 'border-box';
+      // body might not yet exist, so guard it
+      document.addEventListener('DOMContentLoaded', () => {
+        document.body.style.margin = '0';
+        document.body.style.width = forcedWidth + 'px';
+        document.body.style.minWidth = forcedWidth + 'px';
+      });
+    } catch (e) { /* ignore */ }
+  </script>
+
+  <link rel="stylesheet" href="popup.css">
 </head>
 <body>
-    <div class="container">
-        <h2>PhishEye</h2>
-        <p id="currentUrl">Loading URL...</p>
-        <button id="scanButton">Scan Current Page</button>
-        <div id="result" class="hidden">
-            <p id="resultText"></p>
-            <div id="loadingSpinner" class="spinner-hidden">
-                <div class="spinner"></div>
-                <p>Scanning...</p>
-            </div>
-            <div id="detailedResults" class="hidden">
-                <h3>Scan Details:</h3>
-                <dl id="detailsList"></dl>
-            </div>
+  <div class="app" role="main" aria-labelledby="appTitle">
+    <header class="header">
+      <div class="brand">
+        <svg width="36" height="36" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+          <defs>
+            <linearGradient id="g" x1="0" x2="1">
+              <stop offset="0" stop-color="#4facfe"/>
+              <stop offset="1" stop-color="#00f2fe"/>
+            </linearGradient>
+          </defs>
+          <rect rx="5" ry="5" width="24" height="24" fill="url(#g)"/>
+          <path d="M6 12h12M8 8h8M8 16h8" stroke="#fff" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <div>
+          <h1 id="appTitle">PhishEye</h1>
+          <div class="sub">Quick URL scan</div>
         </div>
-    </div>
-    <script src="popup.js"></script>
+      </div>
+      <button id="settingsBtn" class="icon-btn" title="Settings" aria-label="Settings" hidden>
+        ⚙
+      </button>
+    </header>
+
+    <section class="content">
+      <label for="currentUrl" class="sr-only">Current page URL</label>
+      <div id="urlCard" class="url-card" tabindex="0" role="region" aria-labelledby="urlLabel">
+        <div class="url-left">
+          <div id="favicon" class="favicon" aria-hidden="true"></div>
+          <div>
+            <div id="urlLabel" class="url-label">Current Page</div>
+            <div id="currentUrl" class="current-url">Loading...</div>
+          </div>
+        </div>
+        <div class="url-actions">
+          <button id="copyUrlBtn" class="btn small" aria-label="Copy URL">Copy</button>
+          <button id="openTabBtn" class="btn small outline" aria-label="Open page">Open</button>
+        </div>
+      </div>
+
+      <div class="controls">
+        <button id="scanButton" class="primary-btn" aria-live="polite">Scan Current Page</button>
+        <button id="reportBtn" class="btn secondary" title="Report URL" aria-label="Report URL">Report</button>
+      </div>
+
+      <div id="result" class="result hidden" role="status" aria-live="polite">
+        <div class="result-top">
+          <div id="resultBadge" class="badge neutral">Not scanned</div>
+          <div id="confidenceWrap" class="confidence hidden" aria-hidden="true">
+            <div class="confidence-label">Confidence</div>
+            <div class="confidence-bar" aria-hidden="true">
+              <div id="confidenceFill" class="confidence-fill" style="width:0%"></div>
+            </div>
+            <div id="confidencePercent" class="confidence-percent">0%</div>
+          </div>
+        </div>
+
+        <div id="resultText" class="result-text">Click Scan to analyze the URL.</div>
+
+        <div id="loadingSpinner" class="loading hidden" aria-hidden="true">
+          <div class="spinner" role="img" aria-label="Scanning"></div>
+          <div class="loading-text">Scanning…</div>
+        </div>
+
+        <details id="detailedResults" class="details" hidden>
+          <summary>Scan details</summary>
+          <dl id="detailsList" class="details-list" aria-live="polite"></dl>
+        </details>
+
+        <div class="result-actions">
+          <button id="takeActionBtn" class="btn action" hidden>Take Action</button>
+          <button id="closeResult" class="btn small" aria-label="Close result">Close</button>
+        </div>
+      </div>
+
+      <dialog id="reportDialog" class="dialog">
+        <form method="dialog" id="reportForm">
+          <h3>Report URL</h3>
+          <p class="muted">If you think this is a false positive or phishing, add a short note (optional):</p>
+          <textarea id="reportNote" rows="4" placeholder="Optional note..."></textarea>
+          <menu class="dialog-actions">
+            <button id="sendReportBtn" class="btn primary">Send</button>
+            <button id="cancelReportBtn" class="btn small" type="reset">Cancel</button>
+          </menu>
+        </form>
+      </dialog>
+    </section>
+
+    <footer class="footer">
+      <small>PhishEye • local scanner</small>
+    </footer>
+  </div>
+
+  <script src="popup.js"></script>
 </body>
 </html>
