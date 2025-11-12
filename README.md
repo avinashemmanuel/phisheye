@@ -3,7 +3,10 @@
 PhishEye is a web-based and API-driven phishing detection system that uses **Machine Learning (Random Forest)** to classify URLs as **Safe**, **Suspicious**, or **Phishing**.  
 Built using **FastAPI**, **JavaScript**, and **TailwindCSS**, it aims to make browsing safer for everyone.
 
----
+---<br>
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
 
 ## 🚀 Features
 - Real-time phishing URL detection
